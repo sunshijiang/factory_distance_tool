@@ -416,6 +416,37 @@ HTML = r"""<!doctype html>
       margin-top: 12px;
     }
 
+    .context-menu {
+      position: fixed;
+      z-index: 60;
+      min-width: 180px;
+      display: none;
+      background: rgba(255, 250, 242, 0.98);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      box-shadow: 0 18px 40px rgba(29, 23, 17, 0.22);
+      padding: 8px;
+    }
+
+    .context-menu.open {
+      display: block;
+    }
+
+    .context-menu button {
+      width: 100%;
+      text-align: left;
+      background: transparent;
+      color: var(--text);
+      box-shadow: none;
+      padding: 9px 10px;
+      border-radius: 10px;
+    }
+
+    .context-menu button:hover {
+      background: rgba(34, 91, 84, 0.08);
+      transform: none;
+    }
+
     .dot {
       width: 10px;
       height: 10px;
@@ -620,7 +651,7 @@ HTML = r"""<!doctype html>
       <section class="panel toolbar">
         <div>
           <strong>设备与厂界距离测算</strong>
-          <div class="muted">单文件本地版。所有计算都基于原始图片坐标，不依赖后端服务。</div>
+          <div class="muted">单文件本地版。滚轮缩放，按住空格拖动画布平移；右键设备或建筑物可打开快捷菜单。</div>
         </div>
         <div class="legend">
           <span><i class="dot" style="background:#da5a36"></i>比例尺</span>
@@ -645,6 +676,8 @@ HTML = r"""<!doctype html>
 
   <div class="tooltip" id="tooltip"></div>
 
+  <div class="context-menu" id="contextMenu"></div>
+
   <div class="modal-overlay" id="modalOverlay">
     <div class="modal-card">
       <div class="modal-head">
@@ -668,10 +701,12 @@ HTML = r"""<!doctype html>
       version: 1
     };
 
+    const canvasWrap = document.getElementById('canvasWrap');
     const canvas = document.getElementById('mainCanvas');
     const ctx = canvas.getContext('2d');
     const tooltip = document.getElementById('tooltip');
     const placeholder = document.getElementById('placeholder');
+    const contextMenu = document.getElementById('contextMenu');
     const modalOverlay = document.getElementById('modalOverlay');
     const modalTitle = document.getElementById('modalTitle');
     const modalBody = document.getElementById('modalBody');
@@ -757,6 +792,7 @@ HTML = r"""<!doctype html>
     function createSnapshot() {
       return JSON.stringify({
         scale: state.scale,
+        viewport: state.viewport,
         origin: state.origin,
         boundaries: state.boundaries,
         buildings: state.buildings,
@@ -777,6 +813,7 @@ HTML = r"""<!doctype html>
       mode: 'browse',
       pendingPoint: null,
       lastMousePoint: null,
+      viewport: { scale: 1, offsetX: 0, offsetY: 0 },
       scale: null,
       origin: null,
       boundaries: createEmptyBoundaries(),
@@ -800,6 +837,8 @@ HTML = r"""<!doctype html>
     let suppressAutosave = false;
     let activeModal = null;
     let dragState = null;
+    let isSpacePressed = false;
+    let suppressNextClick = false;
 
     // Data normalization keeps imported/autosaved payloads backward compatible.
     function deepClone(value) {
@@ -915,6 +954,20 @@ HTML = r"""<!doctype html>
       return { x: Number(point.x), y: Number(point.y) };
     }
 
+    function normalizeViewport(viewport) {
+      if (!viewport) {
+        return { scale: 1, offsetX: 0, offsetY: 0 };
+      }
+      const scale = Number(viewport.scale);
+      const offsetX = Number(viewport.offsetX);
+      const offsetY = Number(viewport.offsetY);
+      return {
+        scale: Number.isFinite(scale) && scale > 0 ? scale : 1,
+        offsetX: Number.isFinite(offsetX) ? offsetX : 0,
+        offsetY: Number.isFinite(offsetY) ? offsetY : 0
+      };
+    }
+
     function normalizeProjectData(raw) {
       const normalizedScale = normalizeScale(raw && raw.scale);
       const draftScaleInputs = (raw && raw.draftScaleInputs) || {};
@@ -931,6 +984,7 @@ HTML = r"""<!doctype html>
         mode: allowedModes.includes(mode) ? mode : 'browse',
         pendingPoint: normalizePoint(raw && raw.pendingPoint),
         pendingBuildingPoints: Array.isArray(raw && raw.pendingBuildingPoints) ? raw.pendingBuildingPoints.map(normalizePoint).filter(Boolean) : [],
+        viewport: normalizeViewport(raw && raw.viewport),
         scale: normalizedScale,
         origin: normalizePoint(raw && raw.origin),
         boundaries: normalizeBoundaries(raw && raw.boundaries),
@@ -998,6 +1052,11 @@ HTML = r"""<!doctype html>
     }
 
     modalCancel.addEventListener('click', () => closeModal(null));
+    window.addEventListener('click', (event) => {
+      if (!contextMenu.contains(event.target)) {
+        hideContextMenu();
+      }
+    });
     modalOverlay.addEventListener('click', (event) => {
       if (event.target === modalOverlay) {
         closeModal(null);
@@ -1080,6 +1139,28 @@ HTML = r"""<!doctype html>
           return values;
         }
       });
+    }
+
+    function showContextMenu(x, y, items) {
+      contextMenu.innerHTML = '';
+      items.forEach((item) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = item.label;
+        button.addEventListener('click', async () => {
+          hideContextMenu();
+          await item.onClick();
+        });
+        contextMenu.appendChild(button);
+      });
+      contextMenu.style.left = `${x}px`;
+      contextMenu.style.top = `${y}px`;
+      contextMenu.classList.add('open');
+    }
+
+    function hideContextMenu() {
+      contextMenu.classList.remove('open');
+      contextMenu.innerHTML = '';
     }
 
     function applyTheme() {
@@ -1235,6 +1316,7 @@ HTML = r"""<!doctype html>
         mode: state.mode,
         pendingPoint: state.pendingPoint ? deepClone(state.pendingPoint) : null,
         pendingBuildingPoints: deepClone(state.pendingBuildingPoints),
+        viewport: deepClone(state.viewport),
         scale: state.scale ? deepClone(state.scale) : null,
         origin: state.origin ? deepClone(state.origin) : null,
         boundaries: deepClone(state.boundaries),
@@ -1339,6 +1421,7 @@ HTML = r"""<!doctype html>
     function resetAnnotations() {
       state.pendingPoint = null;
       state.lastMousePoint = null;
+      state.viewport = { scale: 1, offsetX: 0, offsetY: 0 };
       state.scale = null;
       state.origin = null;
       state.boundaries = createEmptyBoundaries();
@@ -1377,6 +1460,7 @@ HTML = r"""<!doctype html>
       state.hoveredDeviceId = null;
       state.selectedVertexIndex = null;
       state.mode = 'browse';
+      hideContextMenu();
       hideTooltip();
       syncUiAfterStateChange();
       if (changed && options.autosave !== false) {
@@ -1387,6 +1471,7 @@ HTML = r"""<!doctype html>
     function restoreSnapshot(snapshotText) {
       const snapshot = JSON.parse(snapshotText);
       state.scale = snapshot.scale;
+      state.viewport = normalizeViewport(snapshot.viewport);
       state.origin = normalizePoint(snapshot.origin);
       state.boundaries = normalizeBoundaries(snapshot.boundaries);
       state.buildings = normalizeBuildings(snapshot.buildings);
@@ -1459,9 +1544,18 @@ HTML = r"""<!doctype html>
       const rect = canvas.getBoundingClientRect();
       const scaleX = canvas.width / rect.width;
       const scaleY = canvas.height / rect.height;
+      const screenX = (event.clientX - rect.left) * scaleX;
+      const screenY = (event.clientY - rect.top) * scaleY;
       return {
-        x: (event.clientX - rect.left) * scaleX,
-        y: (event.clientY - rect.top) * scaleY
+        x: (screenX - state.viewport.offsetX) / state.viewport.scale,
+        y: (screenY - state.viewport.offsetY) / state.viewport.scale
+      };
+    }
+
+    function getScreenPointFromWorld(point) {
+      return {
+        x: point.x * state.viewport.scale + state.viewport.offsetX,
+        y: point.y * state.viewport.scale + state.viewport.offsetY
       };
     }
 
@@ -1516,6 +1610,8 @@ HTML = r"""<!doctype html>
         return;
       }
 
+      ctx.save();
+      ctx.setTransform(state.viewport.scale, 0, 0, state.viewport.scale, state.viewport.offsetX, state.viewport.offsetY);
       ctx.drawImage(state.image, 0, 0, canvas.width, canvas.height);
 
       if (state.scale) {
@@ -1643,6 +1739,7 @@ HTML = r"""<!doctype html>
         ctx.fillText(device.name, device.x + 10, device.y - 10);
         ctx.restore();
       });
+      ctx.restore();
     }
 
     // Geometry and measurement helpers.
@@ -1913,6 +2010,29 @@ HTML = r"""<!doctype html>
       return state.buildings.find((building) => isPointInPolygon(point, building.points)) || null;
     }
 
+    function distanceToSegment(point, start, end) {
+      return pointToSegmentDistance(point, { start, end });
+    }
+
+    function findNearestBuildingEdge(point) {
+      const building = getSelectedBuilding();
+      if (!building) {
+        return null;
+      }
+      let nearest = null;
+      let minDistance = Infinity;
+      for (let i = 0; i < building.points.length; i += 1) {
+        const start = building.points[i];
+        const end = building.points[(i + 1) % building.points.length];
+        const d = distanceToSegment(point, start, end);
+        if (d < minDistance) {
+          minDistance = d;
+          nearest = { index: i + 1, distance: d };
+        }
+      }
+      return nearest && nearest.distance <= 16 / state.viewport.scale ? nearest : null;
+    }
+
     function findSelectedVertex(point) {
       const building = getSelectedBuilding();
       if (!building || !state.isVertexEditMode) {
@@ -2142,6 +2262,25 @@ HTML = r"""<!doctype html>
       scheduleAutosave();
     }
 
+    async function insertVertexAtPoint(point) {
+      const building = getSelectedBuilding();
+      if (!building) {
+        await showNotice('请先选择一个建筑物。');
+        return;
+      }
+      const nearest = findNearestBuildingEdge(point);
+      if (!nearest) {
+        await showNotice('请在建筑物边线附近右键，才能插入新顶点。');
+        return;
+      }
+      saveHistory();
+      building.points.splice(nearest.index, 0, { x: point.x, y: point.y });
+      state.isVertexEditMode = true;
+      state.selectedVertexIndex = nearest.index;
+      syncUiAfterStateChange();
+      scheduleAutosave();
+    }
+
     async function finalizeBuilding() {
       if (state.pendingBuildingPoints.length < 3) {
         await showNotice('至少需要 3 个点才能构成建筑物。');
@@ -2283,6 +2422,7 @@ HTML = r"""<!doctype html>
         state.pendingPoint = project.pendingPoint;
         state.pendingBuildingPoints = project.pendingBuildingPoints;
         state.lastMousePoint = null;
+        state.viewport = project.viewport;
         state.scale = project.scale;
         state.origin = project.origin;
         state.boundaries = project.boundaries;
@@ -2525,6 +2665,11 @@ HTML = r"""<!doctype html>
     }
 
     async function handleCanvasClick(event) {
+      hideContextMenu();
+      if (suppressNextClick) {
+        suppressNextClick = false;
+        return;
+      }
       if (!await requireImage()) {
         return;
       }
@@ -2601,6 +2746,40 @@ HTML = r"""<!doctype html>
       }
     }
 
+    async function handleCanvasContextMenu(event) {
+      event.preventDefault();
+      hideContextMenu();
+      if (!state.image) {
+        return;
+      }
+      const point = getCanvasPoint(event);
+      const device = findHoveredDevice(point);
+      if (device) {
+        state.selectedDeviceId = device.id;
+        state.selectedBuildingId = device.buildingId || (getBuildingForDevice(device) || {}).id || null;
+        state.selectedVertexIndex = null;
+        syncUiAfterStateChange();
+        showContextMenu(event.clientX, event.clientY, [
+          { label: '编辑设备', onClick: () => editDevice(device) },
+          { label: '复制设备', onClick: () => { state.selectedDeviceId = device.id; return copySelectedDevice(); } },
+          { label: '删除设备', onClick: () => { state.selectedDeviceId = device.id; return deleteSelectedDevice(); } }
+        ]);
+        return;
+      }
+      const building = findClickedBuilding(point);
+      if (building) {
+        state.selectedBuildingId = building.id;
+        state.selectedDeviceId = null;
+        syncUiAfterStateChange();
+        showContextMenu(event.clientX, event.clientY, [
+          { label: '编辑建筑物参数', onClick: () => editSelectedBuilding() },
+          { label: state.isVertexEditMode ? '关闭顶点编辑' : '开启顶点编辑', onClick: () => toggleVertexEditMode() },
+          { label: '在此插入顶点', onClick: () => insertVertexAtPoint(point) },
+          { label: '删除当前顶点', onClick: () => deleteSelectedVertex() }
+        ]);
+      }
+    }
+
     async function handleCanvasDoubleClick(event) {
       if (!await requireImage()) {
         return;
@@ -2623,7 +2802,15 @@ HTML = r"""<!doctype html>
     }
 
     canvas.addEventListener('mousedown', (event) => {
-      if (!state.image || state.mode !== 'browse') {
+      hideContextMenu();
+      if (!state.image) {
+        return;
+      }
+      if ((event.button === 1 || (event.button === 0 && isSpacePressed)) && state.mode === 'browse') {
+        dragState = { type: 'pan', startClientX: event.clientX, startClientY: event.clientY, startOffsetX: state.viewport.offsetX, startOffsetY: state.viewport.offsetY, moved: false };
+        return;
+      }
+      if (state.mode !== 'browse' || event.button !== 0) {
         return;
       }
       const point = getCanvasPoint(event);
@@ -2656,6 +2843,13 @@ HTML = r"""<!doctype html>
       state.lastMousePoint = point;
 
       if (dragState) {
+        if (dragState.type === 'pan') {
+          state.viewport.offsetX = dragState.startOffsetX + (event.clientX - dragState.startClientX);
+          state.viewport.offsetY = dragState.startOffsetY + (event.clientY - dragState.startClientY);
+          dragState.moved = true;
+          render();
+          return;
+        }
         if (dragState.type === 'device') {
           const device = state.devices.find((item) => item.id === dragState.id);
           if (device) {
@@ -2713,13 +2907,36 @@ HTML = r"""<!doctype html>
 
     canvas.addEventListener('click', handleCanvasClick);
     canvas.addEventListener('dblclick', handleCanvasDoubleClick);
+    canvas.addEventListener('contextmenu', handleCanvasContextMenu);
+    canvas.addEventListener('wheel', (event) => {
+      if (!state.image) {
+        return;
+      }
+      event.preventDefault();
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const screenX = (event.clientX - rect.left) * scaleX;
+      const screenY = (event.clientY - rect.top) * scaleY;
+      const worldX = (screenX - state.viewport.offsetX) / state.viewport.scale;
+      const worldY = (screenY - state.viewport.offsetY) / state.viewport.scale;
+      const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+      const nextScale = Math.min(8, Math.max(0.3, state.viewport.scale * factor));
+      state.viewport.offsetX = screenX - worldX * nextScale;
+      state.viewport.offsetY = screenY - worldY * nextScale;
+      state.viewport.scale = nextScale;
+      render();
+      scheduleAutosave();
+    }, { passive: false });
     window.addEventListener('mouseup', () => {
       if (!dragState) {
         return;
       }
       const didMove = dragState.moved;
+      const type = dragState.type;
       dragState = null;
       if (didMove) {
+        suppressNextClick = true;
         scheduleAutosave();
       }
     });
@@ -2945,8 +3162,18 @@ HTML = r"""<!doctype html>
     });
 
     window.addEventListener('keydown', (event) => {
+      if (event.code === 'Space') {
+        isSpacePressed = true;
+      }
       if (event.key === 'Escape') {
+        hideContextMenu();
         cancelCurrentOperation();
+      }
+    });
+
+    window.addEventListener('keyup', (event) => {
+      if (event.code === 'Space') {
+        isSpacePressed = false;
       }
     });
 
