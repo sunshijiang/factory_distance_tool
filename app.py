@@ -358,7 +358,52 @@ HTML = r"""<!doctype html>
           <button id="undoAction" class="secondary">撤销最近一步</button>
           <button id="clearAll" class="warn">清空全部</button>
         </div>
-        <div class="muted">添加设备模式下，点击图片即可放置设备点。设备名称留空时会自动命名为“设备1、设备2……”。点击“取消当前操作”或按 Esc，会退出当前模式。鼠标悬停在设备点上可以查看到四个方向厂界的距离。</div>
+        <div class="muted">添加设备模式下，点击图片即可放置声源点，并读取下方“噪声参数”中的当前表单值。点击“取消当前操作”或按 Esc，会退出当前模式。鼠标悬停在设备点上可以查看厂界距离和噪声结果。</div>
+      </div>
+
+      <div class="section">
+        <h3>噪声参数</h3>
+        <div class="field">
+          <label for="buildingNameInput">建筑物名称</label>
+          <input id="buildingNameInput" type="text" value="建筑物1">
+        </div>
+        <div class="field">
+          <label for="sourceNameInput">声源名称</label>
+          <input id="sourceNameInput" type="text" value="设备1">
+        </div>
+        <div class="field">
+          <label for="sourceModelInput">型号</label>
+          <input id="sourceModelInput" type="text" value="">
+        </div>
+        <div class="field">
+          <label for="soundPowerLevelInput">声功率级 dB(A)</label>
+          <input id="soundPowerLevelInput" type="number" step="0.01" value="90">
+        </div>
+        <div class="field">
+          <label for="controlMeasuresInput">声源控制措施</label>
+          <input id="controlMeasuresInput" type="text" value="">
+        </div>
+        <div class="field">
+          <label for="indoorBoundaryDistanceInput">距室内边界距离</label>
+          <input id="indoorBoundaryDistanceInput" type="number" min="0.01" step="0.01" value="1">
+        </div>
+        <div class="field">
+          <label for="runtimePeriodInput">运行时段</label>
+          <input id="runtimePeriodInput" type="text" value="昼间">
+        </div>
+        <div class="field">
+          <label for="buildingInsertionLossInput">建筑物插入损失 dB(A)</label>
+          <input id="buildingInsertionLossInput" type="number" step="0.01" value="21">
+        </div>
+        <div class="field">
+          <label for="outdoorDistanceInput">建筑物外距离</label>
+          <input id="outdoorDistanceInput" type="number" min="0.01" step="0.01" value="1">
+        </div>
+        <div class="field">
+          <label for="sourceHeightInput">相对高度 Z</label>
+          <input id="sourceHeightInput" type="number" step="0.01" value="0">
+        </div>
+        <div class="muted">新增声源时会同时记录建筑物名称、声功率级、距室内边界距离、插入损失、建筑物外距离和相对高度 Z，并在 CSV 中计算室内边界声级与建筑物外噪声。</div>
       </div>
 
       <div class="section">
@@ -424,6 +469,16 @@ HTML = r"""<!doctype html>
     const projectImportInput = document.getElementById('projectImportInput');
     const actualLengthInput = document.getElementById('actualLength');
     const unitInput = document.getElementById('unitInput');
+    const buildingNameInput = document.getElementById('buildingNameInput');
+    const sourceNameInput = document.getElementById('sourceNameInput');
+    const sourceModelInput = document.getElementById('sourceModelInput');
+    const soundPowerLevelInput = document.getElementById('soundPowerLevelInput');
+    const controlMeasuresInput = document.getElementById('controlMeasuresInput');
+    const indoorBoundaryDistanceInput = document.getElementById('indoorBoundaryDistanceInput');
+    const runtimePeriodInput = document.getElementById('runtimePeriodInput');
+    const buildingInsertionLossInput = document.getElementById('buildingInsertionLossInput');
+    const outdoorDistanceInput = document.getElementById('outdoorDistanceInput');
+    const sourceHeightInput = document.getElementById('sourceHeightInput');
     const autosaveStatus = document.getElementById('autosaveStatus');
 
     const statusProject = document.getElementById('statusProject');
@@ -532,7 +587,17 @@ HTML = r"""<!doctype html>
           }
           return {
             id: device.id || `dev-import-${Date.now()}-${index}`,
-            name: (device.name || '').trim() || `设备${index + 1}`,
+            name: (device.name || device.sourceName || '').trim() || `设备${index + 1}`,
+            buildingName: (device.buildingName || '').trim() || '建筑物1',
+            sourceName: (device.sourceName || device.name || '').trim() || `设备${index + 1}`,
+            model: (device.model || '').trim(),
+            soundPowerLevel: Number.isFinite(Number(device.soundPowerLevel)) ? Number(device.soundPowerLevel) : 90,
+            controlMeasures: (device.controlMeasures || '').trim(),
+            indoorBoundaryDistance: Number.isFinite(Number(device.indoorBoundaryDistance)) && Number(device.indoorBoundaryDistance) > 0 ? Number(device.indoorBoundaryDistance) : 1,
+            runtimePeriod: (device.runtimePeriod || '').trim() || '昼间',
+            buildingInsertionLoss: Number.isFinite(Number(device.buildingInsertionLoss)) ? Number(device.buildingInsertionLoss) : 21,
+            outdoorDistance: Number.isFinite(Number(device.outdoorDistance)) && Number(device.outdoorDistance) > 0 ? Number(device.outdoorDistance) : 1,
+            z: Number.isFinite(Number(device.z)) ? Number(device.z) : 0,
             x: Number(device.x),
             y: Number(device.y)
           };
@@ -570,6 +635,7 @@ HTML = r"""<!doctype html>
     function normalizeProjectData(raw) {
       const normalizedScale = normalizeScale(raw && raw.scale);
       const draftScaleInputs = (raw && raw.draftScaleInputs) || {};
+      const draftSourceInputs = (raw && raw.draftSourceInputs) || {};
       const mode = raw && typeof raw.mode === 'string' ? raw.mode : 'browse';
       const allowedModes = ['browse', 'scale', 'origin', 'device', 'east', 'south', 'west', 'north'];
 
@@ -588,6 +654,18 @@ HTML = r"""<!doctype html>
         draftScaleInputs: {
           actualLength: String(draftScaleInputs.actualLength ?? (normalizedScale ? normalizedScale.actualDistance : actualLengthInput.value || '10')),
           unit: String(draftScaleInputs.unit ?? (normalizedScale ? normalizedScale.unit : unitInput.value || '米'))
+        },
+        draftSourceInputs: {
+          buildingName: String(draftSourceInputs.buildingName ?? (buildingNameInput.value || '建筑物1')),
+          sourceName: String(draftSourceInputs.sourceName ?? (sourceNameInput.value || '设备1')),
+          model: String(draftSourceInputs.model ?? (sourceModelInput.value || '')),
+          soundPowerLevel: String(draftSourceInputs.soundPowerLevel ?? (soundPowerLevelInput.value || '90')),
+          controlMeasures: String(draftSourceInputs.controlMeasures ?? (controlMeasuresInput.value || '')),
+          indoorBoundaryDistance: String(draftSourceInputs.indoorBoundaryDistance ?? (indoorBoundaryDistanceInput.value || '1')),
+          runtimePeriod: String(draftSourceInputs.runtimePeriod ?? (runtimePeriodInput.value || '昼间')),
+          buildingInsertionLoss: String(draftSourceInputs.buildingInsertionLoss ?? (buildingInsertionLossInput.value || '21')),
+          outdoorDistance: String(draftSourceInputs.outdoorDistance ?? (outdoorDistanceInput.value || '1')),
+          z: String(draftSourceInputs.z ?? (sourceHeightInput.value || '0'))
         }
       };
     }
@@ -685,6 +763,21 @@ HTML = r"""<!doctype html>
       };
     }
 
+    function getDraftSourceInputs() {
+      return {
+        buildingName: (buildingNameInput.value || '').trim() || '建筑物1',
+        sourceName: (sourceNameInput.value || '').trim() || '设备1',
+        model: (sourceModelInput.value || '').trim(),
+        soundPowerLevel: soundPowerLevelInput.value || '90',
+        controlMeasures: (controlMeasuresInput.value || '').trim(),
+        indoorBoundaryDistance: indoorBoundaryDistanceInput.value || '1',
+        runtimePeriod: (runtimePeriodInput.value || '').trim() || '昼间',
+        buildingInsertionLoss: buildingInsertionLossInput.value || '21',
+        outdoorDistance: outdoorDistanceInput.value || '1',
+        z: sourceHeightInput.value || '0'
+      };
+    }
+
     function buildProjectPayload() {
       return {
         version: 2,
@@ -698,7 +791,8 @@ HTML = r"""<!doctype html>
         origin: state.origin ? deepClone(state.origin) : null,
         boundaries: deepClone(state.boundaries),
         devices: deepClone(state.devices),
-        draftScaleInputs: getDraftScaleInputs()
+        draftScaleInputs: getDraftScaleInputs(),
+        draftSourceInputs: getDraftSourceInputs()
       };
     }
 
@@ -1083,9 +1177,9 @@ HTML = r"""<!doctype html>
     function formatRelativePosition(device) {
       const position = getDeviceRelativePosition(device);
       if (!position) {
-        return '未设置原点';
+        return `X=未设置，Y=未设置，Z=${formatNumber(device.z || 0)} m`;
       }
-      return `X=${formatNumber(position.x)} ${position.unit}，Y=${formatNumber(position.y)} ${position.unit}`;
+      return `X=${formatNumber(position.x)} ${position.unit}，Y=${formatNumber(position.y)} ${position.unit}，Z=${formatNumber(device.z || 0)} m`;
     }
 
     function getBoundaryDistanceValue(boundaryKey, point) {
@@ -1105,10 +1199,31 @@ HTML = r"""<!doctype html>
       return pixelToActual(minDistance);
     }
 
+    function getIndoorBoundaryLevel(device) {
+      if (!Number.isFinite(device.soundPowerLevel) || !Number.isFinite(device.indoorBoundaryDistance) || device.indoorBoundaryDistance <= 0) {
+        return null;
+      }
+      return device.soundPowerLevel - 20 * Math.log10(device.indoorBoundaryDistance) - 8;
+    }
+
+    function getOutdoorNoiseLevel(device) {
+      const indoorBoundaryLevel = getIndoorBoundaryLevel(device);
+      if (indoorBoundaryLevel == null || !Number.isFinite(device.buildingInsertionLoss) || !Number.isFinite(device.outdoorDistance) || device.outdoorDistance <= 0) {
+        return null;
+      }
+      return indoorBoundaryLevel - device.buildingInsertionLoss - 20 * Math.log10(device.outdoorDistance);
+    }
+
     function buildTooltip(device) {
+      const indoorBoundaryLevel = getIndoorBoundaryLevel(device);
+      const outdoorNoiseLevel = getOutdoorNoiseLevel(device);
       return [
-        `设备名称：${device.name}`,
+        `建筑物：${device.buildingName || '建筑物1'}`,
+        `声源名称：${device.sourceName || device.name}`,
         `相对原点：${formatRelativePosition(device)}`,
+        `距室内边界：${formatNumber(device.indoorBoundaryDistance || 0)} m`,
+        `室内边界声级：${indoorBoundaryLevel == null ? '未设置' : formatNumber(indoorBoundaryLevel) + ' dB(A)'}`,
+        `建筑物外噪声：${outdoorNoiseLevel == null ? '未设置' : formatNumber(outdoorNoiseLevel) + ' dB(A)'}`,
         `东厂界：${formatDistanceForBoundary('east', device)}`,
         `南厂界：${formatDistanceForBoundary('south', device)}`,
         `西厂界：${formatDistanceForBoundary('west', device)}`,
@@ -1159,21 +1274,73 @@ HTML = r"""<!doctype html>
       return { actualDistance, unit };
     }
 
+    function validateSourceInputs(defaultName) {
+      const soundPowerLevel = Number(soundPowerLevelInput.value);
+      const indoorBoundaryDistance = Number(indoorBoundaryDistanceInput.value);
+      const buildingInsertionLoss = Number(buildingInsertionLossInput.value);
+      const outdoorDistance = Number(outdoorDistanceInput.value);
+      const z = Number(sourceHeightInput.value);
+
+      if (!Number.isFinite(soundPowerLevel)) {
+        alert('请输入有效的声功率级 dB(A)。');
+        return null;
+      }
+      if (!Number.isFinite(indoorBoundaryDistance) || indoorBoundaryDistance <= 0) {
+        alert('请输入大于 0 的距室内边界距离。');
+        return null;
+      }
+      if (!Number.isFinite(buildingInsertionLoss)) {
+        alert('请输入有效的建筑物插入损失 dB(A)。');
+        return null;
+      }
+      if (!Number.isFinite(outdoorDistance) || outdoorDistance <= 0) {
+        alert('请输入大于 0 的建筑物外距离。');
+        return null;
+      }
+      if (!Number.isFinite(z)) {
+        alert('请输入有效的相对高度 Z。');
+        return null;
+      }
+
+      return {
+        buildingName: (buildingNameInput.value || '').trim() || '建筑物1',
+        sourceName: (sourceNameInput.value || '').trim() || defaultName,
+        model: (sourceModelInput.value || '').trim(),
+        soundPowerLevel,
+        controlMeasures: (controlMeasuresInput.value || '').trim(),
+        indoorBoundaryDistance,
+        runtimePeriod: (runtimePeriodInput.value || '').trim() || '昼间',
+        buildingInsertionLoss,
+        outdoorDistance,
+        z
+      };
+    }
+
     function addDevice(point) {
-      saveHistory();
       const defaultName = `设备${state.devices.length + 1}`;
-      const entered = prompt('请输入设备名称（可留空自动命名）', defaultName);
-      if (entered === null) {
-        state.history.pop();
+      const inputs = validateSourceInputs(defaultName);
+      if (!inputs) {
         return;
       }
-      const name = (entered || '').trim() || defaultName;
+
+      saveHistory();
       state.devices.push({
         id: `dev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        name,
+        name: inputs.sourceName,
+        buildingName: inputs.buildingName,
+        sourceName: inputs.sourceName,
+        model: inputs.model,
+        soundPowerLevel: inputs.soundPowerLevel,
+        controlMeasures: inputs.controlMeasures,
+        indoorBoundaryDistance: inputs.indoorBoundaryDistance,
+        runtimePeriod: inputs.runtimePeriod,
+        buildingInsertionLoss: inputs.buildingInsertionLoss,
+        outdoorDistance: inputs.outdoorDistance,
+        z: inputs.z,
         x: point.x,
         y: point.y
       });
+      sourceNameInput.value = `设备${state.devices.length + 1}`;
       syncUiAfterStateChange();
       scheduleAutosave();
     }
@@ -1264,6 +1431,16 @@ HTML = r"""<!doctype html>
 
         actualLengthInput.value = project.draftScaleInputs.actualLength;
         unitInput.value = project.draftScaleInputs.unit;
+        buildingNameInput.value = project.draftSourceInputs.buildingName;
+        sourceNameInput.value = project.draftSourceInputs.sourceName;
+        sourceModelInput.value = project.draftSourceInputs.model;
+        soundPowerLevelInput.value = project.draftSourceInputs.soundPowerLevel;
+        controlMeasuresInput.value = project.draftSourceInputs.controlMeasures;
+        indoorBoundaryDistanceInput.value = project.draftSourceInputs.indoorBoundaryDistance;
+        runtimePeriodInput.value = project.draftSourceInputs.runtimePeriod;
+        buildingInsertionLossInput.value = project.draftSourceInputs.buildingInsertionLoss;
+        outdoorDistanceInput.value = project.draftSourceInputs.outdoorDistance;
+        sourceHeightInput.value = project.draftSourceInputs.z;
 
         if (image) {
           canvas.width = image.width;
@@ -1345,51 +1522,68 @@ HTML = r"""<!doctype html>
         return;
       }
 
-      const coordinateUnit = state.origin ? (state.scale ? state.scale.unit : 'px') : '';
-      const distanceUnit = state.scale ? state.scale.unit : '';
-      const header = [
-        '工程名称',
-        '设备名称',
-        '图片X(px)',
-        '图片Y(px)',
-        '原点X(px)',
-        '原点Y(px)',
-        '相对原点X',
-        '相对原点Y',
-        '坐标单位',
-        '东厂界距离',
-        '南厂界距离',
-        '西厂界距离',
-        '北厂界距离',
-        '距离单位'
+      const coordinateUnit = state.origin ? (state.scale ? state.scale.unit : 'px') : 'px';
+      const distanceUnit = (state.scale && state.scale.unit) || (unitInput.value || '米').trim() || '米';
+      const headerTop = [
+        '序号',
+        '建筑物名称',
+        '声源名称',
+        '型号',
+        '声功率级/dB（A）',
+        '声源控制措施',
+        '空间相对位置/m',
+        '',
+        '',
+        '距室内边界距离/m',
+        '室内边界声级/dB（A）',
+        '运行时段',
+        '建筑物插入损失/dB（A）',
+        '建筑物外噪声',
+        ''
+      ];
+      const headerBottom = [
+        '',
+        '',
+        '',
+        '',
+        '',
+        '',
+        `X(${coordinateUnit})`,
+        `Y(${coordinateUnit})`,
+        'Z(m)',
+        '',
+        '',
+        '',
+        '',
+        '声压级/dB（A）',
+        `建筑物外距离(${distanceUnit})`
       ];
 
-      const rows = state.devices.map((device) => {
+      const rows = state.devices.map((device, index) => {
         const relative = getDeviceRelativePosition(device);
-        const eastDistance = getBoundaryDistanceValue('east', device);
-        const southDistance = getBoundaryDistanceValue('south', device);
-        const westDistance = getBoundaryDistanceValue('west', device);
-        const northDistance = getBoundaryDistanceValue('north', device);
+        const indoorBoundaryLevel = getIndoorBoundaryLevel(device);
+        const outdoorNoiseLevel = getOutdoorNoiseLevel(device);
 
         return [
-          state.projectName || '未命名工程',
-          device.name,
-          formatNumber(device.x),
-          formatNumber(device.y),
-          state.origin ? formatNumber(state.origin.x) : '',
-          state.origin ? formatNumber(state.origin.y) : '',
+          index + 1,
+          device.buildingName || '',
+          device.sourceName || device.name || '',
+          device.model || '',
+          formatNumber(device.soundPowerLevel),
+          device.controlMeasures || '',
           relative ? formatNumber(relative.x) : '',
           relative ? formatNumber(relative.y) : '',
-          relative ? coordinateUnit : '',
-          eastDistance == null ? '' : formatNumber(eastDistance),
-          southDistance == null ? '' : formatNumber(southDistance),
-          westDistance == null ? '' : formatNumber(westDistance),
-          northDistance == null ? '' : formatNumber(northDistance),
-          distanceUnit
+          formatNumber(device.z || 0),
+          formatNumber(device.indoorBoundaryDistance),
+          indoorBoundaryLevel == null ? '' : formatNumber(indoorBoundaryLevel),
+          device.runtimePeriod || '',
+          formatNumber(device.buildingInsertionLoss),
+          outdoorNoiseLevel == null ? '' : formatNumber(outdoorNoiseLevel),
+          formatNumber(device.outdoorDistance)
         ];
       });
 
-      const csvText = [header, ...rows]
+      const csvText = [headerTop, headerBottom, ...rows]
         .map((row) => row.map(escapeCsvValue).join(','))
         .join('\r\n');
 
@@ -1649,6 +1843,23 @@ HTML = r"""<!doctype html>
 
     unitInput.addEventListener('input', () => {
       scheduleAutosave();
+    });
+
+    [
+      buildingNameInput,
+      sourceNameInput,
+      sourceModelInput,
+      soundPowerLevelInput,
+      controlMeasuresInput,
+      indoorBoundaryDistanceInput,
+      runtimePeriodInput,
+      buildingInsertionLossInput,
+      outdoorDistanceInput,
+      sourceHeightInput
+    ].forEach((input) => {
+      input.addEventListener('input', () => {
+        scheduleAutosave();
+      });
     });
 
     window.addEventListener('keydown', (event) => {
