@@ -29,6 +29,32 @@ HTML = r"""<!doctype html>
       --shadow: 0 14px 32px rgba(78, 56, 27, 0.12);
     }
 
+    :root[data-theme="forest"] {
+      --bg: #edf4ef;
+      --panel: #f8fffa;
+      --panel-2: #ebf6ee;
+      --line: #bfd5c4;
+      --text: #1f3124;
+      --muted: #51685a;
+      --accent: #b8662b;
+      --accent-2: #2f6d4f;
+      --danger: #b03e3e;
+      --shadow: 0 14px 32px rgba(36, 76, 52, 0.12);
+    }
+
+    :root[data-theme="slate"] {
+      --bg: #eef2f6;
+      --panel: #fbfdff;
+      --panel-2: #edf3f8;
+      --line: #c6d1dc;
+      --text: #20303f;
+      --muted: #5b7083;
+      --accent: #d36c37;
+      --accent-2: #35607f;
+      --danger: #b54949;
+      --shadow: 0 14px 32px rgba(44, 69, 92, 0.12);
+    }
+
     * { box-sizing: border-box; }
 
     body {
@@ -96,6 +122,10 @@ HTML = r"""<!doctype html>
     .field label {
       font-size: 12px;
       color: var(--muted);
+    }
+
+    .hidden {
+      display: none;
     }
 
     input[type="number"],
@@ -259,6 +289,48 @@ HTML = r"""<!doctype html>
       gap: 6px;
     }
 
+    .scale-summary {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+
+    .theme-grid,
+    .building-actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
+    .theme-grid button {
+      padding: 9px 10px;
+    }
+
+    .building-list {
+      display: grid;
+      gap: 8px;
+      margin-top: 10px;
+      max-height: 180px;
+      overflow: auto;
+    }
+
+    .building-item {
+      width: 100%;
+      text-align: left;
+      background: rgba(255, 255, 255, 0.8);
+      color: var(--text);
+      border: 1px solid var(--line);
+      box-shadow: none;
+    }
+
+    .building-item.active {
+      color: white;
+      background: var(--accent-2);
+      border-color: transparent;
+    }
+
     .dot {
       width: 10px;
       height: 10px;
@@ -313,6 +385,11 @@ HTML = r"""<!doctype html>
 
       <div class="section">
         <h3>比例尺</h3>
+        <div class="scale-summary">
+          <button id="toggleScalePanel" class="secondary" type="button">比例尺设置</button>
+          <div class="muted" id="scaleSummaryText">未设置</div>
+        </div>
+        <div id="scalePanel" class="hidden">
         <div class="field">
           <label for="actualLength">实际长度</label>
           <input id="actualLength" type="number" min="0" step="0.01" value="10">
@@ -326,6 +403,7 @@ HTML = r"""<!doctype html>
           <button id="clearScale" class="secondary">清除尺寸</button>
         </div>
         <div class="muted">点击图片上的两个点，作为参考线段。系统会根据“实际长度”建立像素与真实距离的换算比例。</div>
+        </div>
       </div>
 
       <div class="section">
@@ -358,10 +436,10 @@ HTML = r"""<!doctype html>
           <button id="undoAction" class="secondary">撤销最近一步</button>
           <button id="clearAll" class="warn">清空全部</button>
         </div>
-        <div class="muted">添加设备模式下，点击图片即可放置声源点，并读取下方“噪声参数”中的当前表单值。点击“取消当前操作”或按 Esc，会退出当前模式。鼠标悬停在设备点上可以查看厂界距离和噪声结果。</div>
+        <div class="muted">添加设备模式下，点击图片即可放置声源点，并弹出设备信息填写窗口。点击已有设备可再次编辑型号、声功率级等信息。鼠标悬停在设备点上可以查看厂界距离和噪声结果。</div>
       </div>
 
-      <div class="section">
+      <div class="section hidden" id="noiseDraftSection">
         <h3>噪声参数</h3>
         <div class="field">
           <label for="buildingNameInput">建筑物名称</label>
@@ -404,6 +482,27 @@ HTML = r"""<!doctype html>
           <input id="sourceHeightInput" type="number" step="0.01" value="0">
         </div>
         <div class="muted">新增声源时会同时记录建筑物名称、声功率级、距室内边界距离、插入损失、建筑物外距离和相对高度 Z，并在 CSV 中计算室内边界声级与建筑物外噪声。</div>
+      </div>
+
+      <div class="section">
+        <h3>建筑物</h3>
+        <div class="building-actions">
+          <button id="modeBuilding">绘制建筑物</button>
+          <button id="finishBuilding" class="secondary">完成描绘</button>
+          <button id="editBuilding" class="secondary">编辑建筑物</button>
+          <button id="clearBuildings" class="secondary">清空建筑物</button>
+        </div>
+        <div class="muted" style="margin-top: 8px;">使用多点依次描绘建筑物轮廓，完成后录入建筑物名称和插入损失。浏览模式下可从列表再次编辑。</div>
+        <div id="buildingList" class="building-list"></div>
+      </div>
+
+      <div class="section">
+        <h3>主题</h3>
+        <div class="theme-grid">
+          <button id="themeSand" class="secondary" type="button">暖砂</button>
+          <button id="themeForest" class="secondary" type="button">森林</button>
+          <button id="themeSlate" class="secondary" type="button">青灰</button>
+        </div>
       </div>
 
       <div class="section">
@@ -469,6 +568,8 @@ HTML = r"""<!doctype html>
     const projectImportInput = document.getElementById('projectImportInput');
     const actualLengthInput = document.getElementById('actualLength');
     const unitInput = document.getElementById('unitInput');
+    const scalePanel = document.getElementById('scalePanel');
+    const scaleSummaryText = document.getElementById('scaleSummaryText');
     const buildingNameInput = document.getElementById('buildingNameInput');
     const sourceNameInput = document.getElementById('sourceNameInput');
     const sourceModelInput = document.getElementById('sourceModelInput');
@@ -479,6 +580,7 @@ HTML = r"""<!doctype html>
     const buildingInsertionLossInput = document.getElementById('buildingInsertionLossInput');
     const outdoorDistanceInput = document.getElementById('outdoorDistanceInput');
     const sourceHeightInput = document.getElementById('sourceHeightInput');
+    const buildingList = document.getElementById('buildingList');
     const autosaveStatus = document.getElementById('autosaveStatus');
 
     const statusProject = document.getElementById('statusProject');
@@ -497,7 +599,14 @@ HTML = r"""<!doctype html>
       south: document.getElementById('modeSouth'),
       west: document.getElementById('modeWest'),
       north: document.getElementById('modeNorth'),
-      device: document.getElementById('modeDevice')
+      device: document.getElementById('modeDevice'),
+      building: document.getElementById('modeBuilding')
+    };
+
+    const themeButtons = {
+      sand: document.getElementById('themeSand'),
+      forest: document.getElementById('themeForest'),
+      slate: document.getElementById('themeSlate')
     };
 
     const BOUNDARY_META = {
@@ -517,6 +626,18 @@ HTML = r"""<!doctype html>
       };
     }
 
+    function createDefaultDeviceDraft() {
+      return {
+        sourceName: '设备1',
+        model: '',
+        soundPowerLevel: 90,
+        controlMeasures: '',
+        runtimePeriod: '昼间',
+        outdoorDistance: 1,
+        z: 0
+      };
+    }
+
     const state = {
       image: null,
       imageName: '',
@@ -528,8 +649,13 @@ HTML = r"""<!doctype html>
       scale: null,
       origin: null,
       boundaries: createEmptyBoundaries(),
+      buildings: [],
       devices: [],
+      selectedBuildingId: null,
       hoveredDeviceId: null,
+      pendingBuildingPoints: [],
+      theme: 'sand',
+      deviceDraft: createDefaultDeviceDraft(),
       history: [],
       lastSavedAt: null
     };
@@ -588,14 +714,13 @@ HTML = r"""<!doctype html>
           return {
             id: device.id || `dev-import-${Date.now()}-${index}`,
             name: (device.name || device.sourceName || '').trim() || `设备${index + 1}`,
-            buildingName: (device.buildingName || '').trim() || '建筑物1',
+            buildingId: device.buildingId || null,
+            buildingName: (device.buildingName || '').trim() || '',
             sourceName: (device.sourceName || device.name || '').trim() || `设备${index + 1}`,
             model: (device.model || '').trim(),
             soundPowerLevel: Number.isFinite(Number(device.soundPowerLevel)) ? Number(device.soundPowerLevel) : 90,
             controlMeasures: (device.controlMeasures || '').trim(),
-            indoorBoundaryDistance: Number.isFinite(Number(device.indoorBoundaryDistance)) && Number(device.indoorBoundaryDistance) > 0 ? Number(device.indoorBoundaryDistance) : 1,
             runtimePeriod: (device.runtimePeriod || '').trim() || '昼间',
-            buildingInsertionLoss: Number.isFinite(Number(device.buildingInsertionLoss)) ? Number(device.buildingInsertionLoss) : 21,
             outdoorDistance: Number.isFinite(Number(device.outdoorDistance)) && Number(device.outdoorDistance) > 0 ? Number(device.outdoorDistance) : 1,
             z: Number.isFinite(Number(device.z)) ? Number(device.z) : 0,
             x: Number(device.x),
@@ -603,6 +728,27 @@ HTML = r"""<!doctype html>
           };
         })
         .filter(Boolean);
+    }
+
+    function normalizeBuildings(buildings) {
+      if (!Array.isArray(buildings)) {
+        return [];
+      }
+      return buildings.map((building, index) => {
+        if (!building || !Array.isArray(building.points) || building.points.length < 3) {
+          return null;
+        }
+        const points = building.points.map(normalizePoint).filter(Boolean);
+        if (points.length < 3) {
+          return null;
+        }
+        return {
+          id: building.id || `bld-${Date.now()}-${index}`,
+          name: (building.name || '').trim() || `建筑物${index + 1}`,
+          insertionLoss: Number.isFinite(Number(building.insertionLoss)) ? Number(building.insertionLoss) : 21,
+          points
+        };
+      }).filter(Boolean);
     }
 
     function normalizeScale(scale) {
@@ -637,7 +783,7 @@ HTML = r"""<!doctype html>
       const draftScaleInputs = (raw && raw.draftScaleInputs) || {};
       const draftSourceInputs = (raw && raw.draftSourceInputs) || {};
       const mode = raw && typeof raw.mode === 'string' ? raw.mode : 'browse';
-      const allowedModes = ['browse', 'scale', 'origin', 'device', 'east', 'south', 'west', 'north'];
+      const allowedModes = ['browse', 'scale', 'origin', 'device', 'building', 'east', 'south', 'west', 'north'];
 
       return {
         version: raw && raw.version ? raw.version : 1,
@@ -647,23 +793,24 @@ HTML = r"""<!doctype html>
         imageDataUrl: (raw && raw.imageDataUrl) || '',
         mode: allowedModes.includes(mode) ? mode : 'browse',
         pendingPoint: normalizePoint(raw && raw.pendingPoint),
+        pendingBuildingPoints: Array.isArray(raw && raw.pendingBuildingPoints) ? raw.pendingBuildingPoints.map(normalizePoint).filter(Boolean) : [],
         scale: normalizedScale,
         origin: normalizePoint(raw && raw.origin),
         boundaries: normalizeBoundaries(raw && raw.boundaries),
+        buildings: normalizeBuildings(raw && raw.buildings),
         devices: normalizeDevices(raw && raw.devices),
+        selectedBuildingId: raw && raw.selectedBuildingId ? raw.selectedBuildingId : null,
+        theme: ['sand', 'forest', 'slate'].includes(raw && raw.theme) ? raw.theme : 'sand',
         draftScaleInputs: {
           actualLength: String(draftScaleInputs.actualLength ?? (normalizedScale ? normalizedScale.actualDistance : actualLengthInput.value || '10')),
           unit: String(draftScaleInputs.unit ?? (normalizedScale ? normalizedScale.unit : unitInput.value || '米'))
         },
         draftSourceInputs: {
-          buildingName: String(draftSourceInputs.buildingName ?? (buildingNameInput.value || '建筑物1')),
           sourceName: String(draftSourceInputs.sourceName ?? (sourceNameInput.value || '设备1')),
           model: String(draftSourceInputs.model ?? (sourceModelInput.value || '')),
           soundPowerLevel: String(draftSourceInputs.soundPowerLevel ?? (soundPowerLevelInput.value || '90')),
           controlMeasures: String(draftSourceInputs.controlMeasures ?? (controlMeasuresInput.value || '')),
-          indoorBoundaryDistance: String(draftSourceInputs.indoorBoundaryDistance ?? (indoorBoundaryDistanceInput.value || '1')),
           runtimePeriod: String(draftSourceInputs.runtimePeriod ?? (runtimePeriodInput.value || '昼间')),
-          buildingInsertionLoss: String(draftSourceInputs.buildingInsertionLoss ?? (buildingInsertionLossInput.value || '21')),
           outdoorDistance: String(draftSourceInputs.outdoorDistance ?? (outdoorDistanceInput.value || '1')),
           z: String(draftSourceInputs.z ?? (sourceHeightInput.value || '0'))
         }
@@ -674,6 +821,34 @@ HTML = r"""<!doctype html>
     function setSaveState(summary, detail) {
       statusSaved.textContent = summary;
       autosaveStatus.textContent = detail;
+    }
+
+    function applyTheme() {
+      document.documentElement.setAttribute('data-theme', state.theme);
+    }
+
+    function renderBuildingList() {
+      buildingList.innerHTML = '';
+      if (!state.buildings.length) {
+        const empty = document.createElement('div');
+        empty.className = 'muted';
+        empty.textContent = '暂无建筑物';
+        buildingList.appendChild(empty);
+        return;
+      }
+
+      state.buildings.forEach((building) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'building-item' + (state.selectedBuildingId === building.id ? ' active' : '');
+        button.textContent = `${building.name} | IL ${formatNumber(building.insertionLoss)} dB(A)`;
+        button.addEventListener('click', () => {
+          state.selectedBuildingId = building.id;
+          syncUiAfterStateChange();
+          editSelectedBuilding();
+        });
+        buildingList.appendChild(button);
+      });
     }
 
     function formatTimestamp(isoString) {
@@ -709,8 +884,12 @@ HTML = r"""<!doctype html>
       if (state.mode === 'scale') buttons.scale.classList.add('active');
       if (state.mode === 'origin') buttons.origin.classList.add('active');
       if (state.mode === 'device') buttons.device.classList.add('active');
+      if (state.mode === 'building') buttons.building.classList.add('active');
       if (BOUNDARY_META[state.mode]) buttons[state.mode].classList.add('active');
       canvas.style.cursor = state.image ? (state.mode === 'browse' ? 'default' : 'crosshair') : 'not-allowed';
+      Object.entries(themeButtons).forEach(([key, button]) => {
+        button.classList.toggle('active', state.theme === key);
+      });
     }
 
     function updateStatus() {
@@ -719,6 +898,7 @@ HTML = r"""<!doctype html>
         scale: '设置尺寸',
         origin: '设置原点',
         device: '添加设备',
+        building: '绘制建筑物',
         east: '绘制东厂界',
         south: '绘制南厂界',
         west: '绘制西厂界',
@@ -730,8 +910,10 @@ HTML = r"""<!doctype html>
 
       if (state.scale) {
         statusScale.textContent = `已设置 (${state.scale.actualDistance} ${state.scale.unit})`;
+        scaleSummaryText.textContent = `${state.scale.actualDistance} ${state.scale.unit}`;
       } else {
         statusScale.textContent = '未设置';
+        scaleSummaryText.textContent = '未设置';
       }
 
       if (state.origin) {
@@ -742,7 +924,7 @@ HTML = r"""<!doctype html>
 
       const completedDirections = Object.values(state.boundaries).filter((segments) => segments.length > 0).length;
       const totalSegments = Object.values(state.boundaries).reduce((sum, segments) => sum + segments.length, 0);
-      statusBoundaries.textContent = `${completedDirections} / 4 方向，${totalSegments} 段`;
+      statusBoundaries.textContent = `${completedDirections} / 4 方向，${totalSegments} 段，建筑物 ${state.buildings.length}`;
       statusDevices.textContent = String(state.devices.length);
       statusImage.textContent = state.image ? `${state.image.width} × ${state.image.height}` : '未上传';
       placeholder.style.display = state.image ? 'none' : 'grid';
@@ -752,6 +934,8 @@ HTML = r"""<!doctype html>
       projectNameInput.value = state.projectName;
       updateButtons();
       updateStatus();
+      renderBuildingList();
+      applyTheme();
       render();
     }
 
@@ -764,17 +948,15 @@ HTML = r"""<!doctype html>
     }
 
     function getDraftSourceInputs() {
+      const draft = state.deviceDraft || createDefaultDeviceDraft();
       return {
-        buildingName: (buildingNameInput.value || '').trim() || '建筑物1',
-        sourceName: (sourceNameInput.value || '').trim() || '设备1',
-        model: (sourceModelInput.value || '').trim(),
-        soundPowerLevel: soundPowerLevelInput.value || '90',
-        controlMeasures: (controlMeasuresInput.value || '').trim(),
-        indoorBoundaryDistance: indoorBoundaryDistanceInput.value || '1',
-        runtimePeriod: (runtimePeriodInput.value || '').trim() || '昼间',
-        buildingInsertionLoss: buildingInsertionLossInput.value || '21',
-        outdoorDistance: outdoorDistanceInput.value || '1',
-        z: sourceHeightInput.value || '0'
+        sourceName: draft.sourceName || '设备1',
+        model: draft.model || '',
+        soundPowerLevel: String(draft.soundPowerLevel ?? 90),
+        controlMeasures: draft.controlMeasures || '',
+        runtimePeriod: draft.runtimePeriod || '昼间',
+        outdoorDistance: String(draft.outdoorDistance ?? 1),
+        z: String(draft.z ?? 0)
       };
     }
 
@@ -787,10 +969,14 @@ HTML = r"""<!doctype html>
         imageDataUrl: state.imageDataUrl,
         mode: state.mode,
         pendingPoint: state.pendingPoint ? deepClone(state.pendingPoint) : null,
+        pendingBuildingPoints: deepClone(state.pendingBuildingPoints),
         scale: state.scale ? deepClone(state.scale) : null,
         origin: state.origin ? deepClone(state.origin) : null,
         boundaries: deepClone(state.boundaries),
+        buildings: deepClone(state.buildings),
         devices: deepClone(state.devices),
+        selectedBuildingId: state.selectedBuildingId,
+        theme: state.theme,
         draftScaleInputs: getDraftScaleInputs(),
         draftSourceInputs: getDraftSourceInputs()
       };
@@ -798,7 +984,7 @@ HTML = r"""<!doctype html>
 
     function hasProjectContent() {
       const hasBoundaries = Object.values(state.boundaries).some((segments) => segments.length > 0);
-      return Boolean(state.imageDataUrl || state.scale || state.origin || hasBoundaries || state.devices.length || state.pendingPoint);
+      return Boolean(state.imageDataUrl || state.scale || state.origin || hasBoundaries || state.devices.length || state.buildings.length || state.pendingPoint || state.pendingBuildingPoints.length);
     }
 
     function saveHistory() {
@@ -806,7 +992,9 @@ HTML = r"""<!doctype html>
         scale: state.scale,
         origin: state.origin,
         boundaries: state.boundaries,
-        devices: state.devices
+        buildings: state.buildings,
+        devices: state.devices,
+        selectedBuildingId: state.selectedBuildingId
       }));
       if (state.history.length > 50) {
         state.history.shift();
@@ -892,8 +1080,11 @@ HTML = r"""<!doctype html>
       state.scale = null;
       state.origin = null;
       state.boundaries = createEmptyBoundaries();
+      state.buildings = [];
       state.devices = [];
+      state.selectedBuildingId = null;
       state.hoveredDeviceId = null;
+      state.pendingBuildingPoints = [];
       state.history = [];
       hideTooltip();
     }
@@ -901,6 +1092,9 @@ HTML = r"""<!doctype html>
     function setMode(nextMode, options = {}) {
       state.mode = nextMode;
       state.pendingPoint = null;
+      if (nextMode !== 'building') {
+        state.pendingBuildingPoints = [];
+      }
       syncUiAfterStateChange();
       if (options.autosave !== false) {
         scheduleAutosave();
@@ -908,8 +1102,9 @@ HTML = r"""<!doctype html>
     }
 
     function cancelCurrentOperation(options = {}) {
-      const changed = state.mode !== 'browse' || Boolean(state.pendingPoint);
+      const changed = state.mode !== 'browse' || Boolean(state.pendingPoint) || state.pendingBuildingPoints.length > 0;
       state.pendingPoint = null;
+      state.pendingBuildingPoints = [];
       state.hoveredDeviceId = null;
       state.mode = 'browse';
       hideTooltip();
@@ -928,8 +1123,11 @@ HTML = r"""<!doctype html>
       state.scale = snapshot.scale;
       state.origin = normalizePoint(snapshot.origin);
       state.boundaries = normalizeBoundaries(snapshot.boundaries);
+      state.buildings = normalizeBuildings(snapshot.buildings);
       state.devices = normalizeDevices(snapshot.devices);
+      state.selectedBuildingId = snapshot.selectedBuildingId || null;
       state.pendingPoint = null;
+      state.pendingBuildingPoints = [];
       state.hoveredDeviceId = null;
       hideTooltip();
       syncUiAfterStateChange();
@@ -940,7 +1138,7 @@ HTML = r"""<!doctype html>
       if (!state.image) {
         return;
       }
-      if (!confirm('确定要清空比例尺、厂界和设备点吗？')) {
+      if (!confirm('确定要清空比例尺、厂界、建筑物和设备点吗？')) {
         return;
       }
       resetAnnotations();
@@ -1074,6 +1272,55 @@ HTML = r"""<!doctype html>
         });
       });
 
+      state.buildings.forEach((building, index) => {
+        const isSelected = building.id === state.selectedBuildingId;
+        ctx.save();
+        ctx.beginPath();
+        building.points.forEach((point, pointIndex) => {
+          if (pointIndex === 0) {
+            ctx.moveTo(point.x, point.y);
+          } else {
+            ctx.lineTo(point.x, point.y);
+          }
+        });
+        ctx.closePath();
+        ctx.fillStyle = isSelected ? 'rgba(196, 93, 36, 0.18)' : 'rgba(34, 91, 84, 0.12)';
+        ctx.strokeStyle = isSelected ? '#c45d24' : '#225b54';
+        ctx.lineWidth = isSelected ? 3 : 2;
+        ctx.setLineDash([10, 6]);
+        ctx.fill();
+        ctx.stroke();
+        ctx.restore();
+
+        const center = getPolygonCentroid(building.points);
+        ctx.save();
+        ctx.font = 'bold 13px "Microsoft YaHei", sans-serif';
+        ctx.fillStyle = isSelected ? '#c45d24' : '#225b54';
+        ctx.fillText(building.name || `建筑物${index + 1}`, center.x + 10, center.y);
+        ctx.restore();
+      });
+
+      if (state.mode === 'building' && state.pendingBuildingPoints.length) {
+        ctx.save();
+        ctx.strokeStyle = '#225b54';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([8, 8]);
+        ctx.beginPath();
+        state.pendingBuildingPoints.forEach((point, index) => {
+          if (index === 0) {
+            ctx.moveTo(point.x, point.y);
+          } else {
+            ctx.lineTo(point.x, point.y);
+          }
+        });
+        if (state.lastMousePoint) {
+          ctx.lineTo(state.lastMousePoint.x, state.lastMousePoint.y);
+        }
+        ctx.stroke();
+        ctx.restore();
+        state.pendingBuildingPoints.forEach((point) => drawCircle(point, '#225b54', 4));
+      }
+
       if (state.pendingPoint && (state.mode === 'scale' || BOUNDARY_META[state.mode])) {
         const hoverPoint = state.lastMousePoint || state.pendingPoint;
         drawLine(state.pendingPoint, hoverPoint, {
@@ -1118,6 +1365,91 @@ HTML = r"""<!doctype html>
       const closestX = ax + abx * t;
       const closestY = ay + aby * t;
       return Math.hypot(px - closestX, py - closestY);
+    }
+
+    function getPolygonCentroid(points) {
+      const total = points.reduce((acc, point) => ({ x: acc.x + point.x, y: acc.y + point.y }), { x: 0, y: 0 });
+      return {
+        x: total.x / points.length,
+        y: total.y / points.length
+      };
+    }
+
+    function isPointInPolygon(point, polygon) {
+      let inside = false;
+      for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+        const xi = polygon[i].x;
+        const yi = polygon[i].y;
+        const xj = polygon[j].x;
+        const yj = polygon[j].y;
+        const intersects = ((yi > point.y) !== (yj > point.y)) &&
+          (point.x < ((xj - xi) * (point.y - yi)) / ((yj - yi) || 1e-9) + xi);
+        if (intersects) inside = !inside;
+      }
+      return inside;
+    }
+
+    function getSelectedBuilding() {
+      return state.buildings.find((building) => building.id === state.selectedBuildingId) || null;
+    }
+
+    function getBuildingForDevice(device) {
+      if (device.buildingId) {
+        const matched = state.buildings.find((building) => building.id === device.buildingId);
+        if (matched) {
+          return matched;
+        }
+      }
+      return state.buildings.find((building) => isPointInPolygon(device, building.points)) || null;
+    }
+
+    function findContainingBuilding(point) {
+      return state.buildings.find((building) => isPointInPolygon(point, building.points)) || null;
+    }
+
+    function raySegmentDistance(point, start, end, direction) {
+      if (direction === 'east' || direction === 'west') {
+        if ((start.y > point.y) === (end.y > point.y) || start.y === end.y) {
+          return null;
+        }
+        const t = (point.y - start.y) / (end.y - start.y);
+        if (t < 0 || t > 1) {
+          return null;
+        }
+        const x = start.x + (end.x - start.x) * t;
+        if (direction === 'east' && x > point.x) return x - point.x;
+        if (direction === 'west' && x < point.x) return point.x - x;
+        return null;
+      }
+
+      if ((start.x > point.x) === (end.x > point.x) || start.x === end.x) {
+        return null;
+      }
+      const t = (point.x - start.x) / (end.x - start.x);
+      if (t < 0 || t > 1) {
+        return null;
+      }
+      const y = start.y + (end.y - start.y) * t;
+      if (direction === 'south' && y > point.y) return y - point.y;
+      if (direction === 'north' && y < point.y) return point.y - y;
+      return null;
+    }
+
+    function getIndoorDistanceByDirection(device, direction) {
+      const building = getBuildingForDevice(device);
+      if (!building || !state.scale || !isPointInPolygon(device, building.points)) {
+        return null;
+      }
+      let minPixel = Infinity;
+      for (let i = 0; i < building.points.length; i += 1) {
+        const start = building.points[i];
+        const end = building.points[(i + 1) % building.points.length];
+        const hit = raySegmentDistance(device, start, end, direction);
+        if (hit != null && hit < minPixel) {
+          minPixel = hit;
+        }
+      }
+      return Number.isFinite(minPixel) ? pixelToActual(minPixel) : null;
     }
 
     function pixelToActual(pixelDistance) {
@@ -1182,6 +1514,10 @@ HTML = r"""<!doctype html>
       return `X=${formatNumber(position.x)} ${position.unit}，Y=${formatNumber(position.y)} ${position.unit}，Z=${formatNumber(device.z || 0)} m`;
     }
 
+    function formatDirectionLabel(key) {
+      return BOUNDARY_META[key].shortLabel;
+    }
+
     function getBoundaryDistanceValue(boundaryKey, point) {
       const boundarySegments = state.boundaries[boundaryKey];
       if (!boundarySegments || !boundarySegments.length || !state.scale) {
@@ -1199,31 +1535,47 @@ HTML = r"""<!doctype html>
       return pixelToActual(minDistance);
     }
 
-    function getIndoorBoundaryLevel(device) {
-      if (!Number.isFinite(device.soundPowerLevel) || !Number.isFinite(device.indoorBoundaryDistance) || device.indoorBoundaryDistance <= 0) {
+    function getIndoorBoundaryLevel(device, direction) {
+      const distanceToIndoorBoundary = getIndoorDistanceByDirection(device, direction);
+      if (!Number.isFinite(device.soundPowerLevel) || !Number.isFinite(distanceToIndoorBoundary) || distanceToIndoorBoundary <= 0) {
         return null;
       }
-      return device.soundPowerLevel - 20 * Math.log10(device.indoorBoundaryDistance) - 8;
+      return device.soundPowerLevel - 20 * Math.log10(distanceToIndoorBoundary) - 8;
     }
 
-    function getOutdoorNoiseLevel(device) {
-      const indoorBoundaryLevel = getIndoorBoundaryLevel(device);
-      if (indoorBoundaryLevel == null || !Number.isFinite(device.buildingInsertionLoss) || !Number.isFinite(device.outdoorDistance) || device.outdoorDistance <= 0) {
+    function getOutdoorNoiseLevel(device, direction) {
+      const building = getBuildingForDevice(device);
+      const indoorBoundaryLevel = getIndoorBoundaryLevel(device, direction);
+      if (!building || indoorBoundaryLevel == null || !Number.isFinite(building.insertionLoss) || !Number.isFinite(device.outdoorDistance) || device.outdoorDistance <= 0) {
         return null;
       }
-      return indoorBoundaryLevel - device.buildingInsertionLoss - 20 * Math.log10(device.outdoorDistance);
+      return indoorBoundaryLevel - building.insertionLoss - 20 * Math.log10(device.outdoorDistance);
+    }
+
+    function formatDirectionalSeries(device, formatter) {
+      return ['east', 'south', 'west', 'north']
+        .map((key) => `${formatDirectionLabel(key)}=${formatter(key)}`)
+        .join('，');
     }
 
     function buildTooltip(device) {
-      const indoorBoundaryLevel = getIndoorBoundaryLevel(device);
-      const outdoorNoiseLevel = getOutdoorNoiseLevel(device);
+      const building = getBuildingForDevice(device);
       return [
-        `建筑物：${device.buildingName || '建筑物1'}`,
+        `建筑物：${building ? building.name : (device.buildingName || '未关联')}`,
         `声源名称：${device.sourceName || device.name}`,
         `相对原点：${formatRelativePosition(device)}`,
-        `距室内边界：${formatNumber(device.indoorBoundaryDistance || 0)} m`,
-        `室内边界声级：${indoorBoundaryLevel == null ? '未设置' : formatNumber(indoorBoundaryLevel) + ' dB(A)'}`,
-        `建筑物外噪声：${outdoorNoiseLevel == null ? '未设置' : formatNumber(outdoorNoiseLevel) + ' dB(A)'}`,
+        `距室内边界：${formatDirectionalSeries(device, (key) => {
+          const value = getIndoorDistanceByDirection(device, key);
+          return value == null ? '未设置' : `${formatNumber(value)} ${state.scale ? state.scale.unit : 'm'}`;
+        })}`,
+        `室内边界声级：${formatDirectionalSeries(device, (key) => {
+          const value = getIndoorBoundaryLevel(device, key);
+          return value == null ? '未设置' : `${formatNumber(value)} dB(A)`;
+        })}`,
+        `建筑物外噪声：${formatDirectionalSeries(device, (key) => {
+          const value = getOutdoorNoiseLevel(device, key);
+          return value == null ? '未设置' : `${formatNumber(value)} dB(A)`;
+        })}`,
         `东厂界：${formatDistanceForBoundary('east', device)}`,
         `南厂界：${formatDistanceForBoundary('south', device)}`,
         `西厂界：${formatDistanceForBoundary('west', device)}`,
@@ -1255,6 +1607,10 @@ HTML = r"""<!doctype html>
       return target;
     }
 
+    function findClickedBuilding(point) {
+      return state.buildings.find((building) => isPointInPolygon(point, building.points)) || null;
+    }
+
     // User interaction workflows for annotation and project lifecycle.
     function requireImage() {
       if (state.image) {
@@ -1275,22 +1631,32 @@ HTML = r"""<!doctype html>
     }
 
     function validateSourceInputs(defaultName) {
-      const soundPowerLevel = Number(soundPowerLevelInput.value);
-      const indoorBoundaryDistance = Number(indoorBoundaryDistanceInput.value);
-      const buildingInsertionLoss = Number(buildingInsertionLossInput.value);
-      const outdoorDistance = Number(outdoorDistanceInput.value);
-      const z = Number(sourceHeightInput.value);
+      const draft = state.deviceDraft || createDefaultDeviceDraft();
+      const sourceNameInputValue = prompt('声源名称', draft.sourceName || defaultName);
+      if (sourceNameInputValue === null) return null;
+      const modelInputValue = prompt('型号', draft.model || '');
+      if (modelInputValue === null) return null;
+      const soundPowerInputValue = prompt('声功率级 dB(A)', String(draft.soundPowerLevel ?? 90));
+      if (soundPowerInputValue === null) return null;
+      const controlMeasuresInputValue = prompt('声源控制措施', draft.controlMeasures || '');
+      if (controlMeasuresInputValue === null) return null;
+      const runtimePeriodInputValue = prompt('运行时段', draft.runtimePeriod || '昼间');
+      if (runtimePeriodInputValue === null) return null;
+      const outdoorDistanceInputValue = prompt('建筑物外距离', String(draft.outdoorDistance ?? 1));
+      if (outdoorDistanceInputValue === null) return null;
+      const zInputValue = prompt('相对高度 Z', String(draft.z ?? 0));
+      if (zInputValue === null) return null;
+
+      const sourceName = (sourceNameInputValue || '').trim() || defaultName;
+      const model = (modelInputValue || '').trim();
+      const soundPowerLevel = Number(soundPowerInputValue);
+      const controlMeasures = (controlMeasuresInputValue || '').trim();
+      const runtimePeriod = (runtimePeriodInputValue || '').trim() || '昼间';
+      const outdoorDistance = Number(outdoorDistanceInputValue);
+      const z = Number(zInputValue);
 
       if (!Number.isFinite(soundPowerLevel)) {
         alert('请输入有效的声功率级 dB(A)。');
-        return null;
-      }
-      if (!Number.isFinite(indoorBoundaryDistance) || indoorBoundaryDistance <= 0) {
-        alert('请输入大于 0 的距室内边界距离。');
-        return null;
-      }
-      if (!Number.isFinite(buildingInsertionLoss)) {
-        alert('请输入有效的建筑物插入损失 dB(A)。');
         return null;
       }
       if (!Number.isFinite(outdoorDistance) || outdoorDistance <= 0) {
@@ -1303,17 +1669,138 @@ HTML = r"""<!doctype html>
       }
 
       return {
-        buildingName: (buildingNameInput.value || '').trim() || '建筑物1',
-        sourceName: (sourceNameInput.value || '').trim() || defaultName,
-        model: (sourceModelInput.value || '').trim(),
+        sourceName,
+        model,
         soundPowerLevel,
-        controlMeasures: (controlMeasuresInput.value || '').trim(),
-        indoorBoundaryDistance,
-        runtimePeriod: (runtimePeriodInput.value || '').trim() || '昼间',
-        buildingInsertionLoss,
+        controlMeasures,
+        runtimePeriod,
         outdoorDistance,
         z
       };
+    }
+
+    function editDevice(device) {
+      if (!device) {
+        return;
+      }
+      const buildingNames = state.buildings.map((building) => building.name).join(' / ');
+      const sourceNameInputValue = prompt('声源名称', device.sourceName || device.name || '');
+      if (sourceNameInputValue === null) return;
+      const modelInputValue = prompt('型号', device.model || '');
+      if (modelInputValue === null) return;
+      const soundPowerInputValue = prompt('声功率级 dB(A)', String(device.soundPowerLevel ?? 90));
+      if (soundPowerInputValue === null) return;
+      const controlMeasuresInputValue = prompt('声源控制措施', device.controlMeasures || '');
+      if (controlMeasuresInputValue === null) return;
+      const runtimePeriodInputValue = prompt('运行时段', device.runtimePeriod || '昼间');
+      if (runtimePeriodInputValue === null) return;
+      const outdoorDistanceInputValue = prompt('建筑物外距离', String(device.outdoorDistance ?? 1));
+      if (outdoorDistanceInputValue === null) return;
+      const zInputValue = prompt('相对高度 Z', String(device.z ?? 0));
+      if (zInputValue === null) return;
+      let buildingName = prompt(`所属建筑物名称（可留空取消关联）${buildingNames ? '，可选：' + buildingNames : ''}`, (getBuildingForDevice(device) || {}).name || '');
+      if (buildingName === null) return;
+
+      const sourceName = (sourceNameInputValue || '').trim() || device.sourceName || device.name;
+      const model = (modelInputValue || '').trim();
+      const soundPowerLevel = Number(soundPowerInputValue);
+      const controlMeasures = (controlMeasuresInputValue || '').trim();
+      const runtimePeriod = (runtimePeriodInputValue || '').trim() || '昼间';
+      const outdoorDistance = Number(outdoorDistanceInputValue);
+      const z = Number(zInputValue);
+
+      if (!Number.isFinite(soundPowerLevel) || !Number.isFinite(outdoorDistance) || outdoorDistance <= 0 || !Number.isFinite(z)) {
+        alert('设备信息未更新：请确保声功率级、建筑物外距离和 Z 为有效数字。');
+        return;
+      }
+
+      buildingName = (buildingName || '').trim();
+      const building = state.buildings.find((item) => item.name === buildingName) || null;
+
+      saveHistory();
+      Object.assign(device, {
+        name: sourceName,
+        sourceName,
+        model,
+        soundPowerLevel,
+        controlMeasures,
+        runtimePeriod,
+        outdoorDistance,
+        z,
+        buildingId: building ? building.id : null,
+        buildingName: building ? building.name : ''
+      });
+      state.deviceDraft = {
+        sourceName,
+        model,
+        soundPowerLevel,
+        controlMeasures,
+        runtimePeriod,
+        outdoorDistance,
+        z
+      };
+      syncUiAfterStateChange();
+      scheduleAutosave();
+    }
+
+    function promptBuildingData(existing = null, defaultName = '建筑物1') {
+      const nameInputValue = prompt('建筑物名称', existing ? existing.name : defaultName);
+      if (nameInputValue === null) return null;
+      const insertionLossInputValue = prompt('建筑物插入损失 dB(A)', String(existing ? existing.insertionLoss : 21));
+      if (insertionLossInputValue === null) return null;
+      const name = (nameInputValue || '').trim() || defaultName;
+      const insertionLoss = Number(insertionLossInputValue);
+      if (!Number.isFinite(insertionLoss)) {
+        alert('请输入有效的建筑物插入损失。');
+        return null;
+      }
+      return { name, insertionLoss };
+    }
+
+    function editSelectedBuilding() {
+      const building = getSelectedBuilding();
+      if (!building) {
+        alert('请先在左侧选择一个建筑物。');
+        return;
+      }
+      const next = promptBuildingData(building, building.name);
+      if (!next) {
+        return;
+      }
+      saveHistory();
+      building.name = next.name;
+      building.insertionLoss = next.insertionLoss;
+      state.devices.forEach((device) => {
+        if (device.buildingId === building.id) {
+          device.buildingName = next.name;
+        }
+      });
+      syncUiAfterStateChange();
+      scheduleAutosave();
+    }
+
+    function finalizeBuilding() {
+      if (state.pendingBuildingPoints.length < 3) {
+        alert('至少需要 3 个点才能构成建筑物。');
+        return;
+      }
+      const next = promptBuildingData(null, `建筑物${state.buildings.length + 1}`);
+      if (!next) {
+        return;
+      }
+      saveHistory();
+      const building = {
+        id: `bld-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: next.name,
+        insertionLoss: next.insertionLoss,
+        points: deepClone(state.pendingBuildingPoints)
+      };
+      state.buildings.push(building);
+      state.selectedBuildingId = building.id;
+      state.pendingBuildingPoints = [];
+      state.mode = 'browse';
+      syncUiAfterStateChange();
+      scheduleAutosave();
     }
 
     function addDevice(point) {
@@ -1324,23 +1811,31 @@ HTML = r"""<!doctype html>
       }
 
       saveHistory();
+      const building = findContainingBuilding(point) || getSelectedBuilding();
       state.devices.push({
         id: `dev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         name: inputs.sourceName,
-        buildingName: inputs.buildingName,
+        buildingId: building ? building.id : null,
+        buildingName: building ? building.name : '',
         sourceName: inputs.sourceName,
         model: inputs.model,
         soundPowerLevel: inputs.soundPowerLevel,
         controlMeasures: inputs.controlMeasures,
-        indoorBoundaryDistance: inputs.indoorBoundaryDistance,
         runtimePeriod: inputs.runtimePeriod,
-        buildingInsertionLoss: inputs.buildingInsertionLoss,
         outdoorDistance: inputs.outdoorDistance,
         z: inputs.z,
         x: point.x,
         y: point.y
       });
-      sourceNameInput.value = `设备${state.devices.length + 1}`;
+      state.deviceDraft = {
+        sourceName: `设备${state.devices.length + 1}`,
+        model: inputs.model,
+        soundPowerLevel: inputs.soundPowerLevel,
+        controlMeasures: inputs.controlMeasures,
+        runtimePeriod: inputs.runtimePeriod,
+        outdoorDistance: inputs.outdoorDistance,
+        z: inputs.z
+      };
       syncUiAfterStateChange();
       scheduleAutosave();
     }
@@ -1420,27 +1915,37 @@ HTML = r"""<!doctype html>
         state.projectName = project.projectName;
         state.mode = project.mode;
         state.pendingPoint = project.pendingPoint;
+        state.pendingBuildingPoints = project.pendingBuildingPoints;
         state.lastMousePoint = null;
         state.scale = project.scale;
         state.origin = project.origin;
         state.boundaries = project.boundaries;
+        state.buildings = project.buildings;
         state.devices = project.devices;
+        state.selectedBuildingId = project.selectedBuildingId;
+        state.theme = project.theme;
         state.hoveredDeviceId = null;
         state.history = [];
         state.lastSavedAt = project.savedAt;
 
         actualLengthInput.value = project.draftScaleInputs.actualLength;
         unitInput.value = project.draftScaleInputs.unit;
-        buildingNameInput.value = project.draftSourceInputs.buildingName;
         sourceNameInput.value = project.draftSourceInputs.sourceName;
         sourceModelInput.value = project.draftSourceInputs.model;
         soundPowerLevelInput.value = project.draftSourceInputs.soundPowerLevel;
         controlMeasuresInput.value = project.draftSourceInputs.controlMeasures;
-        indoorBoundaryDistanceInput.value = project.draftSourceInputs.indoorBoundaryDistance;
         runtimePeriodInput.value = project.draftSourceInputs.runtimePeriod;
-        buildingInsertionLossInput.value = project.draftSourceInputs.buildingInsertionLoss;
         outdoorDistanceInput.value = project.draftSourceInputs.outdoorDistance;
         sourceHeightInput.value = project.draftSourceInputs.z;
+        state.deviceDraft = {
+          sourceName: project.draftSourceInputs.sourceName,
+          model: project.draftSourceInputs.model,
+          soundPowerLevel: Number(project.draftSourceInputs.soundPowerLevel),
+          controlMeasures: project.draftSourceInputs.controlMeasures,
+          runtimePeriod: project.draftSourceInputs.runtimePeriod,
+          outdoorDistance: Number(project.draftSourceInputs.outdoorDistance),
+          z: Number(project.draftSourceInputs.z)
+        };
 
         if (image) {
           canvas.width = image.width;
@@ -1535,11 +2040,20 @@ HTML = r"""<!doctype html>
         '',
         '',
         '距室内边界距离/m',
+        '',
+        '',
+        '',
         '室内边界声级/dB（A）',
+        '',
+        '',
+        '',
         '运行时段',
         '建筑物插入损失/dB（A）',
         '建筑物外噪声',
-        ''
+        '',
+        '',
+        '',
+        '建筑物外距离'
       ];
       const headerBottom = [
         '',
@@ -1551,22 +2065,33 @@ HTML = r"""<!doctype html>
         `X(${coordinateUnit})`,
         `Y(${coordinateUnit})`,
         'Z(m)',
+        '东',
+        '南',
+        '西',
+        '北',
+        '东',
+        '南',
+        '西',
+        '北',
         '',
         '',
-        '',
-        '',
-        '声压级/dB（A）',
-        `建筑物外距离(${distanceUnit})`
+        '东',
+        '南',
+        '西',
+        '北',
+        `${distanceUnit}`
       ];
 
       const rows = state.devices.map((device, index) => {
         const relative = getDeviceRelativePosition(device);
-        const indoorBoundaryLevel = getIndoorBoundaryLevel(device);
-        const outdoorNoiseLevel = getOutdoorNoiseLevel(device);
+        const building = getBuildingForDevice(device);
+        const indoorDistances = ['east', 'south', 'west', 'north'].map((key) => getIndoorDistanceByDirection(device, key));
+        const indoorLevels = ['east', 'south', 'west', 'north'].map((key) => getIndoorBoundaryLevel(device, key));
+        const outdoorLevels = ['east', 'south', 'west', 'north'].map((key) => getOutdoorNoiseLevel(device, key));
 
         return [
           index + 1,
-          device.buildingName || '',
+          building ? building.name : (device.buildingName || ''),
           device.sourceName || device.name || '',
           device.model || '',
           formatNumber(device.soundPowerLevel),
@@ -1574,11 +2099,11 @@ HTML = r"""<!doctype html>
           relative ? formatNumber(relative.x) : '',
           relative ? formatNumber(relative.y) : '',
           formatNumber(device.z || 0),
-          formatNumber(device.indoorBoundaryDistance),
-          indoorBoundaryLevel == null ? '' : formatNumber(indoorBoundaryLevel),
+          ...indoorDistances.map((value) => value == null ? '' : formatNumber(value)),
+          ...indoorLevels.map((value) => value == null ? '' : formatNumber(value)),
           device.runtimePeriod || '',
-          formatNumber(device.buildingInsertionLoss),
-          outdoorNoiseLevel == null ? '' : formatNumber(outdoorNoiseLevel),
+          building ? formatNumber(building.insertionLoss) : '',
+          ...outdoorLevels.map((value) => value == null ? '' : formatNumber(value)),
           formatNumber(device.outdoorDistance)
         ];
       });
@@ -1636,6 +2161,20 @@ HTML = r"""<!doctype html>
       }
       const point = getCanvasPoint(event);
 
+      if (state.mode === 'browse') {
+        const clickedDevice = findHoveredDevice(point);
+        if (clickedDevice) {
+          editDevice(clickedDevice);
+          return;
+        }
+        const clickedBuilding = findClickedBuilding(point);
+        if (clickedBuilding) {
+          state.selectedBuildingId = clickedBuilding.id;
+          syncUiAfterStateChange();
+          return;
+        }
+      }
+
       if (state.mode === 'scale') {
         if (!state.pendingPoint) {
           state.pendingPoint = point;
@@ -1649,6 +2188,13 @@ HTML = r"""<!doctype html>
 
       if (state.mode === 'origin') {
         finalizeOrigin(point);
+        return;
+      }
+
+      if (state.mode === 'building') {
+        state.pendingBuildingPoints.push(point);
+        render();
+        scheduleAutosave();
         return;
       }
 
@@ -1692,6 +2238,10 @@ HTML = r"""<!doctype html>
       }
 
       if (state.pendingPoint && (state.mode === 'scale' || BOUNDARY_META[state.mode])) {
+        render();
+      }
+
+      if (state.mode === 'building' && state.pendingBuildingPoints.length) {
         render();
       }
     });
@@ -1746,6 +2296,10 @@ HTML = r"""<!doctype html>
       setMode(state.mode === 'scale' ? 'browse' : 'scale');
     });
 
+    document.getElementById('toggleScalePanel').addEventListener('click', () => {
+      scalePanel.classList.toggle('hidden');
+    });
+
     document.getElementById('modeOrigin').addEventListener('click', () => {
       if (!requireImage()) return;
       setMode(state.mode === 'origin' ? 'browse' : 'origin');
@@ -1776,6 +2330,37 @@ HTML = r"""<!doctype html>
       setMode(state.mode === 'device' ? 'browse' : 'device');
     });
 
+    document.getElementById('modeBuilding').addEventListener('click', () => {
+      if (!requireImage()) return;
+      setMode(state.mode === 'building' ? 'browse' : 'building');
+    });
+
+    document.getElementById('finishBuilding').addEventListener('click', () => {
+      finalizeBuilding();
+    });
+
+    document.getElementById('editBuilding').addEventListener('click', () => {
+      editSelectedBuilding();
+    });
+
+    document.getElementById('clearBuildings').addEventListener('click', () => {
+      if (!state.buildings.length) {
+        return;
+      }
+      if (!confirm('确定要清空所有建筑物吗？')) {
+        return;
+      }
+      saveHistory();
+      state.buildings = [];
+      state.selectedBuildingId = null;
+      state.devices.forEach((device) => {
+        device.buildingId = null;
+        device.buildingName = '';
+      });
+      syncUiAfterStateChange();
+      scheduleAutosave();
+    });
+
     document.getElementById('cancelPending').addEventListener('click', () => {
       cancelCurrentOperation();
     });
@@ -1784,6 +2369,14 @@ HTML = r"""<!doctype html>
     document.getElementById('clearAll').addEventListener('click', resetAll);
     document.getElementById('clearScale').addEventListener('click', clearScale);
     document.getElementById('clearOrigin').addEventListener('click', clearOrigin);
+
+    Object.keys(themeButtons).forEach((key) => {
+      themeButtons[key].addEventListener('click', () => {
+        state.theme = key;
+        syncUiAfterStateChange();
+        scheduleAutosave();
+      });
+    });
 
     document.getElementById('exportProject').addEventListener('click', () => {
       exportProjectFile();
@@ -1877,6 +2470,8 @@ HTML = r"""<!doctype html>
 
     // Initial boot: render shell and restore autosave if present.
     async function initializeApp() {
+      applyTheme();
+      renderBuildingList();
       updateButtons();
       updateStatus();
       refreshSaveStatus();
