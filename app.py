@@ -331,6 +331,91 @@ HTML = r"""<!doctype html>
       border-color: transparent;
     }
 
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      background: rgba(28, 24, 19, 0.34);
+      backdrop-filter: blur(8px);
+      z-index: 50;
+    }
+
+    .modal-overlay.open {
+      display: flex;
+    }
+
+    .modal-card {
+      width: min(560px, 100%);
+      max-height: calc(100vh - 40px);
+      overflow: auto;
+      background: linear-gradient(180deg, rgba(255,255,255,0.96), rgba(248,241,228,0.96));
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      box-shadow: 0 22px 50px rgba(29, 23, 17, 0.24);
+      padding: 20px;
+    }
+
+    .modal-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .modal-head h3 {
+      margin: 0;
+      font-size: 18px;
+    }
+
+    .modal-form {
+      display: grid;
+      gap: 10px;
+    }
+
+    .modal-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .modal-grid .field {
+      margin-bottom: 0;
+    }
+
+    textarea,
+    select {
+      width: 100%;
+      border: 1px solid var(--line);
+      background: white;
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-size: 14px;
+      color: var(--text);
+      font-family: inherit;
+    }
+
+    textarea {
+      min-height: 84px;
+      resize: vertical;
+    }
+
+    .modal-error {
+      color: var(--danger);
+      font-size: 12px;
+      min-height: 18px;
+    }
+
+    .modal-actions {
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+      margin-top: 12px;
+    }
+
     .dot {
       width: 10px;
       height: 10px;
@@ -434,6 +519,9 @@ HTML = r"""<!doctype html>
         </div>
         <div class="btn-grid" style="margin-top: 8px;">
           <button id="undoAction" class="secondary">撤销最近一步</button>
+          <button id="redoAction" class="secondary">恢复撤销</button>
+        </div>
+        <div class="btn-grid" style="margin-top: 8px;">
           <button id="clearAll" class="warn">清空全部</button>
         </div>
         <div class="muted">添加设备模式下，点击图片即可放置声源点，并弹出设备信息填写窗口。点击已有设备可再次编辑型号、声功率级等信息。鼠标悬停在设备点上可以查看厂界距离和噪声结果。</div>
@@ -549,6 +637,20 @@ HTML = r"""<!doctype html>
 
   <div class="tooltip" id="tooltip"></div>
 
+  <div class="modal-overlay" id="modalOverlay">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h3 id="modalTitle">提示</h3>
+      </div>
+      <div id="modalBody"></div>
+      <div class="modal-error" id="modalError"></div>
+      <div class="modal-actions">
+        <button id="modalCancel" class="secondary" type="button">取消</button>
+        <button id="modalConfirm" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+
   <script>
     // Persistent storage configuration.
     const AUTOSAVE_CONFIG = {
@@ -562,6 +664,12 @@ HTML = r"""<!doctype html>
     const ctx = canvas.getContext('2d');
     const tooltip = document.getElementById('tooltip');
     const placeholder = document.getElementById('placeholder');
+    const modalOverlay = document.getElementById('modalOverlay');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalBody = document.getElementById('modalBody');
+    const modalError = document.getElementById('modalError');
+    const modalCancel = document.getElementById('modalCancel');
+    const modalConfirm = document.getElementById('modalConfirm');
 
     const imageInput = document.getElementById('imageInput');
     const projectNameInput = document.getElementById('projectName');
@@ -638,6 +746,18 @@ HTML = r"""<!doctype html>
       };
     }
 
+    function createSnapshot() {
+      return JSON.stringify({
+        scale: state.scale,
+        origin: state.origin,
+        boundaries: state.boundaries,
+        buildings: state.buildings,
+        devices: state.devices,
+        selectedBuildingId: state.selectedBuildingId,
+        pendingBuildingPoints: state.pendingBuildingPoints
+      });
+    }
+
     const state = {
       image: null,
       imageName: '',
@@ -657,12 +777,14 @@ HTML = r"""<!doctype html>
       theme: 'sand',
       deviceDraft: createDefaultDeviceDraft(),
       history: [],
+      future: [],
       lastSavedAt: null
     };
 
     let dbPromise = null;
     let autosaveTimer = null;
     let suppressAutosave = false;
+    let activeModal = null;
 
     // Data normalization keeps imported/autosaved payloads backward compatible.
     function deepClone(value) {
@@ -821,6 +943,125 @@ HTML = r"""<!doctype html>
     function setSaveState(summary, detail) {
       statusSaved.textContent = summary;
       autosaveStatus.textContent = detail;
+    }
+
+    function escapeHtml(value) {
+      return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    function closeModal(result = null) {
+      if (!activeModal) {
+        return;
+      }
+      const resolver = activeModal.resolve;
+      activeModal = null;
+      modalOverlay.classList.remove('open');
+      modalBody.innerHTML = '';
+      modalError.textContent = '';
+      resolver(result);
+    }
+
+    function openModal(config) {
+      modalTitle.textContent = config.title || '提示';
+      modalBody.innerHTML = config.bodyHtml || '';
+      modalError.textContent = '';
+      modalCancel.textContent = config.cancelText || '取消';
+      modalConfirm.textContent = config.confirmText || '确定';
+      modalCancel.style.display = config.showCancel === false ? 'none' : 'inline-flex';
+      modalOverlay.classList.add('open');
+
+      return new Promise((resolve) => {
+        activeModal = { resolve, onConfirm: config.onConfirm || null };
+      });
+    }
+
+    modalCancel.addEventListener('click', () => closeModal(null));
+    modalOverlay.addEventListener('click', (event) => {
+      if (event.target === modalOverlay) {
+        closeModal(null);
+      }
+    });
+    modalConfirm.addEventListener('click', async () => {
+      if (!activeModal) {
+        return;
+      }
+      if (!activeModal.onConfirm) {
+        closeModal(true);
+        return;
+      }
+      try {
+        const result = await activeModal.onConfirm();
+        if (result === false) {
+          return;
+        }
+        closeModal(result);
+      } catch (error) {
+        modalError.textContent = error && error.message ? error.message : String(error);
+      }
+    });
+
+    function showNotice(message, title = '提示') {
+      return openModal({
+        title,
+        bodyHtml: `<div class="muted">${escapeHtml(message)}</div>`,
+        confirmText: '知道了',
+        showCancel: false
+      });
+    }
+
+    function showConfirmDialog(message, title = '确认操作') {
+      return openModal({
+        title,
+        bodyHtml: `<div class="muted">${escapeHtml(message)}</div>`,
+        confirmText: '确认',
+        cancelText: '取消'
+      });
+    }
+
+    function buildFieldHtml(field) {
+      const base = `<label for="modal_${field.name}">${escapeHtml(field.label)}</label>`;
+      const value = escapeHtml(field.value || '');
+      if (field.type === 'textarea') {
+        return `<div class="field">${base}<textarea id="modal_${field.name}" data-name="${field.name}">${value}</textarea></div>`;
+      }
+      if (field.type === 'select') {
+        const options = (field.options || []).map((option) => {
+          const selected = String(option.value) === String(field.value || '') ? ' selected' : '';
+          return `<option value="${escapeHtml(option.value)}"${selected}>${escapeHtml(option.label)}</option>`;
+        }).join('');
+        return `<div class="field">${base}<select id="modal_${field.name}" data-name="${field.name}">${options}</select></div>`;
+      }
+      const inputType = field.type || 'text';
+      return `<div class="field">${base}<input id="modal_${field.name}" data-name="${field.name}" type="${inputType}" value="${value}"></div>`;
+    }
+
+    function showFormDialog(title, fields, options = {}) {
+      const bodyHtml = `
+        <div class="modal-form">
+          ${options.description ? `<div class="muted">${escapeHtml(options.description)}</div>` : ''}
+          <div class="modal-grid">${fields.map(buildFieldHtml).join('')}</div>
+        </div>`;
+      return openModal({
+        title,
+        bodyHtml,
+        confirmText: options.confirmText || '保存',
+        cancelText: options.cancelText || '取消',
+        onConfirm: () => {
+          const values = {};
+          fields.forEach((field) => {
+            const element = document.getElementById(`modal_${field.name}`);
+            values[field.name] = element ? element.value : '';
+          });
+          if (options.validate) {
+            return options.validate(values);
+          }
+          return values;
+        }
+      });
     }
 
     function applyTheme() {
@@ -988,14 +1229,8 @@ HTML = r"""<!doctype html>
     }
 
     function saveHistory() {
-      state.history.push(JSON.stringify({
-        scale: state.scale,
-        origin: state.origin,
-        boundaries: state.boundaries,
-        buildings: state.buildings,
-        devices: state.devices,
-        selectedBuildingId: state.selectedBuildingId
-      }));
+      state.history.push(createSnapshot());
+      state.future = [];
       if (state.history.length > 50) {
         state.history.shift();
       }
@@ -1086,6 +1321,7 @@ HTML = r"""<!doctype html>
       state.hoveredDeviceId = null;
       state.pendingBuildingPoints = [];
       state.history = [];
+      state.future = [];
       hideTooltip();
     }
 
@@ -1114,31 +1350,46 @@ HTML = r"""<!doctype html>
       }
     }
 
-    function undoLastAction() {
-      if (!state.history.length) {
-        alert('没有可撤销的操作。');
-        return;
-      }
-      const snapshot = JSON.parse(state.history.pop());
+    function restoreSnapshot(snapshotText) {
+      const snapshot = JSON.parse(snapshotText);
       state.scale = snapshot.scale;
       state.origin = normalizePoint(snapshot.origin);
       state.boundaries = normalizeBoundaries(snapshot.boundaries);
       state.buildings = normalizeBuildings(snapshot.buildings);
       state.devices = normalizeDevices(snapshot.devices);
       state.selectedBuildingId = snapshot.selectedBuildingId || null;
+      state.pendingBuildingPoints = (snapshot.pendingBuildingPoints || []).map(normalizePoint).filter(Boolean);
       state.pendingPoint = null;
-      state.pendingBuildingPoints = [];
       state.hoveredDeviceId = null;
       hideTooltip();
       syncUiAfterStateChange();
+    }
+
+    async function undoLastAction() {
+      if (!state.history.length) {
+        await showNotice('没有可撤销的操作。');
+        return;
+      }
+      state.future.push(createSnapshot());
+      restoreSnapshot(state.history.pop());
       scheduleAutosave();
     }
 
-    function resetAll() {
+    async function redoLastAction() {
+      if (!state.future.length) {
+        await showNotice('没有可恢复的撤销操作。');
+        return;
+      }
+      state.history.push(createSnapshot());
+      restoreSnapshot(state.future.pop());
+      scheduleAutosave();
+    }
+
+    async function resetAll() {
       if (!state.image) {
         return;
       }
-      if (!confirm('确定要清空比例尺、厂界、建筑物和设备点吗？')) {
+      if (!await showConfirmDialog('确定要清空比例尺、厂界、建筑物和设备点吗？')) {
         return;
       }
       resetAnnotations();
@@ -1612,11 +1863,11 @@ HTML = r"""<!doctype html>
     }
 
     // User interaction workflows for annotation and project lifecycle.
-    function requireImage() {
+    async function requireImage() {
       if (state.image) {
         return true;
       }
-      alert('请先上传图片。');
+      await showNotice('请先上传图片。');
       return false;
     }
 
@@ -1624,146 +1875,118 @@ HTML = r"""<!doctype html>
       const actualDistance = Number(actualLengthInput.value);
       const unit = (unitInput.value || '').trim() || '米';
       if (!Number.isFinite(actualDistance) || actualDistance <= 0) {
-        alert('请输入大于 0 的实际长度。');
-        return null;
+        throw new Error('请输入大于 0 的实际长度。');
       }
       return { actualDistance, unit };
     }
 
-    function validateSourceInputs(defaultName) {
+    async function validateSourceInputs(defaultName, device = null) {
       const draft = state.deviceDraft || createDefaultDeviceDraft();
-      const sourceNameInputValue = prompt('声源名称', draft.sourceName || defaultName);
-      if (sourceNameInputValue === null) return null;
-      const modelInputValue = prompt('型号', draft.model || '');
-      if (modelInputValue === null) return null;
-      const soundPowerInputValue = prompt('声功率级 dB(A)', String(draft.soundPowerLevel ?? 90));
-      if (soundPowerInputValue === null) return null;
-      const controlMeasuresInputValue = prompt('声源控制措施', draft.controlMeasures || '');
-      if (controlMeasuresInputValue === null) return null;
-      const runtimePeriodInputValue = prompt('运行时段', draft.runtimePeriod || '昼间');
-      if (runtimePeriodInputValue === null) return null;
-      const outdoorDistanceInputValue = prompt('建筑物外距离', String(draft.outdoorDistance ?? 1));
-      if (outdoorDistanceInputValue === null) return null;
-      const zInputValue = prompt('相对高度 Z', String(draft.z ?? 0));
-      if (zInputValue === null) return null;
-
-      const sourceName = (sourceNameInputValue || '').trim() || defaultName;
-      const model = (modelInputValue || '').trim();
-      const soundPowerLevel = Number(soundPowerInputValue);
-      const controlMeasures = (controlMeasuresInputValue || '').trim();
-      const runtimePeriod = (runtimePeriodInputValue || '').trim() || '昼间';
-      const outdoorDistance = Number(outdoorDistanceInputValue);
-      const z = Number(zInputValue);
-
-      if (!Number.isFinite(soundPowerLevel)) {
-        alert('请输入有效的声功率级 dB(A)。');
-        return null;
-      }
-      if (!Number.isFinite(outdoorDistance) || outdoorDistance <= 0) {
-        alert('请输入大于 0 的建筑物外距离。');
-        return null;
-      }
-      if (!Number.isFinite(z)) {
-        alert('请输入有效的相对高度 Z。');
-        return null;
-      }
-
-      return {
-        sourceName,
-        model,
-        soundPowerLevel,
-        controlMeasures,
-        runtimePeriod,
-        outdoorDistance,
-        z
-      };
+      const building = device ? getBuildingForDevice(device) : getSelectedBuilding();
+      return showFormDialog(device ? '编辑设备信息' : '新增设备信息', [
+        { name: 'sourceName', label: '声源名称', value: device ? (device.sourceName || device.name || defaultName) : (draft.sourceName || defaultName) },
+        { name: 'model', label: '型号', value: device ? (device.model || '') : (draft.model || '') },
+        { name: 'soundPowerLevel', label: '声功率级 dB(A)', type: 'number', value: String(device ? (device.soundPowerLevel ?? 90) : (draft.soundPowerLevel ?? 90)) },
+        { name: 'controlMeasures', label: '声源控制措施', type: 'textarea', value: device ? (device.controlMeasures || '') : (draft.controlMeasures || '') },
+        { name: 'runtimePeriod', label: '运行时段', value: device ? (device.runtimePeriod || '昼间') : (draft.runtimePeriod || '昼间') },
+        { name: 'outdoorDistance', label: '建筑物外距离', type: 'number', value: String(device ? (device.outdoorDistance ?? 1) : (draft.outdoorDistance ?? 1)) },
+        { name: 'z', label: '相对高度 Z', type: 'number', value: String(device ? (device.z ?? 0) : (draft.z ?? 0)) },
+        {
+          name: 'buildingId',
+          label: '所属建筑物',
+          type: 'select',
+          value: device ? ((device.buildingId || (building && building.id) || '')) : ((building && building.id) || ''),
+          options: [{ label: '不关联建筑物', value: '' }, ...state.buildings.map((item) => ({ label: item.name, value: item.id }))]
+        }
+      ], {
+        description: '在一个界面中维护设备的型号、声功率级、运行时段和建筑物关联。',
+        confirmText: device ? '保存修改' : '创建设备',
+        validate: (values) => {
+          const soundPowerLevel = Number(values.soundPowerLevel);
+          const outdoorDistance = Number(values.outdoorDistance);
+          const z = Number(values.z);
+          if (!Number.isFinite(soundPowerLevel)) {
+            throw new Error('请输入有效的声功率级 dB(A)。');
+          }
+          if (!Number.isFinite(outdoorDistance) || outdoorDistance <= 0) {
+            throw new Error('请输入大于 0 的建筑物外距离。');
+          }
+          if (!Number.isFinite(z)) {
+            throw new Error('请输入有效的相对高度 Z。');
+          }
+          return {
+            sourceName: (values.sourceName || '').trim() || defaultName,
+            model: (values.model || '').trim(),
+            soundPowerLevel,
+            controlMeasures: (values.controlMeasures || '').trim(),
+            runtimePeriod: (values.runtimePeriod || '').trim() || '昼间',
+            outdoorDistance,
+            z,
+            buildingId: values.buildingId || null
+          };
+        }
+      });
     }
 
-    function editDevice(device) {
+    async function editDevice(device) {
       if (!device) {
         return;
       }
-      const buildingNames = state.buildings.map((building) => building.name).join(' / ');
-      const sourceNameInputValue = prompt('声源名称', device.sourceName || device.name || '');
-      if (sourceNameInputValue === null) return;
-      const modelInputValue = prompt('型号', device.model || '');
-      if (modelInputValue === null) return;
-      const soundPowerInputValue = prompt('声功率级 dB(A)', String(device.soundPowerLevel ?? 90));
-      if (soundPowerInputValue === null) return;
-      const controlMeasuresInputValue = prompt('声源控制措施', device.controlMeasures || '');
-      if (controlMeasuresInputValue === null) return;
-      const runtimePeriodInputValue = prompt('运行时段', device.runtimePeriod || '昼间');
-      if (runtimePeriodInputValue === null) return;
-      const outdoorDistanceInputValue = prompt('建筑物外距离', String(device.outdoorDistance ?? 1));
-      if (outdoorDistanceInputValue === null) return;
-      const zInputValue = prompt('相对高度 Z', String(device.z ?? 0));
-      if (zInputValue === null) return;
-      let buildingName = prompt(`所属建筑物名称（可留空取消关联）${buildingNames ? '，可选：' + buildingNames : ''}`, (getBuildingForDevice(device) || {}).name || '');
-      if (buildingName === null) return;
-
-      const sourceName = (sourceNameInputValue || '').trim() || device.sourceName || device.name;
-      const model = (modelInputValue || '').trim();
-      const soundPowerLevel = Number(soundPowerInputValue);
-      const controlMeasures = (controlMeasuresInputValue || '').trim();
-      const runtimePeriod = (runtimePeriodInputValue || '').trim() || '昼间';
-      const outdoorDistance = Number(outdoorDistanceInputValue);
-      const z = Number(zInputValue);
-
-      if (!Number.isFinite(soundPowerLevel) || !Number.isFinite(outdoorDistance) || outdoorDistance <= 0 || !Number.isFinite(z)) {
-        alert('设备信息未更新：请确保声功率级、建筑物外距离和 Z 为有效数字。');
+      const inputs = await validateSourceInputs(device.sourceName || device.name || '设备', device);
+      if (!inputs) {
         return;
       }
-
-      buildingName = (buildingName || '').trim();
-      const building = state.buildings.find((item) => item.name === buildingName) || null;
+      const building = state.buildings.find((item) => item.id === inputs.buildingId) || null;
 
       saveHistory();
       Object.assign(device, {
-        name: sourceName,
-        sourceName,
-        model,
-        soundPowerLevel,
-        controlMeasures,
-        runtimePeriod,
-        outdoorDistance,
-        z,
+        name: inputs.sourceName,
+        sourceName: inputs.sourceName,
+        model: inputs.model,
+        soundPowerLevel: inputs.soundPowerLevel,
+        controlMeasures: inputs.controlMeasures,
+        runtimePeriod: inputs.runtimePeriod,
+        outdoorDistance: inputs.outdoorDistance,
+        z: inputs.z,
         buildingId: building ? building.id : null,
         buildingName: building ? building.name : ''
       });
       state.deviceDraft = {
-        sourceName,
-        model,
-        soundPowerLevel,
-        controlMeasures,
-        runtimePeriod,
-        outdoorDistance,
-        z
+        sourceName: inputs.sourceName,
+        model: inputs.model,
+        soundPowerLevel: inputs.soundPowerLevel,
+        controlMeasures: inputs.controlMeasures,
+        runtimePeriod: inputs.runtimePeriod,
+        outdoorDistance: inputs.outdoorDistance,
+        z: inputs.z
       };
       syncUiAfterStateChange();
       scheduleAutosave();
     }
 
-    function promptBuildingData(existing = null, defaultName = '建筑物1') {
-      const nameInputValue = prompt('建筑物名称', existing ? existing.name : defaultName);
-      if (nameInputValue === null) return null;
-      const insertionLossInputValue = prompt('建筑物插入损失 dB(A)', String(existing ? existing.insertionLoss : 21));
-      if (insertionLossInputValue === null) return null;
-      const name = (nameInputValue || '').trim() || defaultName;
-      const insertionLoss = Number(insertionLossInputValue);
-      if (!Number.isFinite(insertionLoss)) {
-        alert('请输入有效的建筑物插入损失。');
-        return null;
-      }
-      return { name, insertionLoss };
+    async function promptBuildingData(existing = null, defaultName = '建筑物1') {
+      return showFormDialog(existing ? '编辑建筑物参数' : '建筑物参数', [
+        { name: 'insertionLoss', label: '建筑物插入损失 dB(A)', type: 'number', value: String(existing ? existing.insertionLoss : 21) }
+      ], {
+        description: existing ? `${existing.name} 仅需维护建筑物插入损失。` : `${defaultName} 仅需维护建筑物插入损失。`,
+        confirmText: existing ? '保存建筑物' : '创建建筑物',
+        validate: (values) => {
+          const insertionLoss = Number(values.insertionLoss);
+          if (!Number.isFinite(insertionLoss)) {
+            throw new Error('请输入有效的建筑物插入损失。');
+          }
+          return { name: existing ? existing.name : defaultName, insertionLoss };
+        }
+      });
     }
 
-    function editSelectedBuilding() {
+    async function editSelectedBuilding() {
       const building = getSelectedBuilding();
       if (!building) {
-        alert('请先在左侧选择一个建筑物。');
+        await showNotice('请先在左侧选择一个建筑物。');
         return;
       }
-      const next = promptBuildingData(building, building.name);
+      const next = await promptBuildingData(building, building.name);
       if (!next) {
         return;
       }
@@ -1779,12 +2002,12 @@ HTML = r"""<!doctype html>
       scheduleAutosave();
     }
 
-    function finalizeBuilding() {
+    async function finalizeBuilding() {
       if (state.pendingBuildingPoints.length < 3) {
-        alert('至少需要 3 个点才能构成建筑物。');
+        await showNotice('至少需要 3 个点才能构成建筑物。');
         return;
       }
-      const next = promptBuildingData(null, `建筑物${state.buildings.length + 1}`);
+      const next = await promptBuildingData(null, `建筑物${state.buildings.length + 1}`);
       if (!next) {
         return;
       }
@@ -1803,15 +2026,15 @@ HTML = r"""<!doctype html>
       scheduleAutosave();
     }
 
-    function addDevice(point) {
+    async function addDevice(point) {
       const defaultName = `设备${state.devices.length + 1}`;
-      const inputs = validateSourceInputs(defaultName);
+      const inputs = await validateSourceInputs(defaultName);
       if (!inputs) {
         return;
       }
 
       saveHistory();
-      const building = findContainingBuilding(point) || getSelectedBuilding();
+      const building = state.buildings.find((item) => item.id === inputs.buildingId) || findContainingBuilding(point) || getSelectedBuilding();
       state.devices.push({
         id: `dev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         name: inputs.sourceName,
@@ -1840,14 +2063,17 @@ HTML = r"""<!doctype html>
       scheduleAutosave();
     }
 
-    function finalizeScale(point) {
-      const inputs = validateScaleInputs();
-      if (!inputs) {
+    async function finalizeScale(point) {
+      let inputs;
+      try {
+        inputs = validateScaleInputs();
+      } catch (error) {
+        await showNotice(error.message || String(error));
         return;
       }
       const pixelDistance = distance(state.pendingPoint, point);
       if (pixelDistance <= 0) {
-        alert('参考线长度必须大于 0。');
+        await showNotice('参考线长度必须大于 0。');
         return;
       }
       saveHistory();
@@ -1871,12 +2097,12 @@ HTML = r"""<!doctype html>
       scheduleAutosave();
     }
 
-    function finalizeBoundary(point) {
+    async function finalizeBoundary(point) {
       const key = state.mode;
       const meta = BOUNDARY_META[key];
       const pixelDistance = distance(state.pendingPoint, point);
       if (pixelDistance <= 0) {
-        alert(meta.label + ' 的线段长度必须大于 0。');
+        await showNotice(meta.label + ' 的线段长度必须大于 0。');
         return;
       }
       saveHistory();
@@ -1981,7 +2207,7 @@ HTML = r"""<!doctype html>
       const payload = await readAutosaveData();
       if (!payload) {
         if (!options.silent) {
-          alert('没有找到自动保存的工程。');
+          await showNotice('没有找到自动保存的工程。');
         }
         if (!state.lastSavedAt) {
           refreshSaveStatus();
@@ -1989,7 +2215,7 @@ HTML = r"""<!doctype html>
         return false;
       }
       if (options.confirmOverwrite && hasProjectContent()) {
-        const confirmed = confirm('恢复自动保存会覆盖当前页面内容，是否继续？');
+        const confirmed = await showConfirmDialog('恢复自动保存会覆盖当前页面内容，是否继续？');
         if (!confirmed) {
           return false;
         }
@@ -2023,7 +2249,7 @@ HTML = r"""<!doctype html>
 
     function exportDeviceCsv() {
       if (!state.devices.length) {
-        alert('当前没有设备数据可导出。');
+        showNotice('当前没有设备数据可导出。');
         return;
       }
 
@@ -2128,7 +2354,7 @@ HTML = r"""<!doctype html>
         return;
       }
       if (hasProjectContent()) {
-        const confirmed = confirm('导入工程会覆盖当前页面内容，是否继续？');
+        const confirmed = await showConfirmDialog('导入工程会覆盖当前页面内容，是否继续？');
         if (!confirmed) {
           projectImportInput.value = '';
           return;
@@ -2140,7 +2366,7 @@ HTML = r"""<!doctype html>
       try {
         parsed = JSON.parse(text);
       } catch (error) {
-        alert('工程文件不是有效的 JSON。');
+        await showNotice('工程文件不是有效的 JSON。');
         projectImportInput.value = '';
         return;
       }
@@ -2149,14 +2375,14 @@ HTML = r"""<!doctype html>
         await applyProjectData(parsed, { autosaveAfterRestore: true, resetSaveState: true });
       } catch (error) {
         console.error(error);
-        alert(`导入失败：${error.message || error}`);
+        await showNotice(`导入失败：${error.message || error}`);
       } finally {
         projectImportInput.value = '';
       }
     }
 
-    function handleCanvasClick(event) {
-      if (!requireImage()) {
+    async function handleCanvasClick(event) {
+      if (!await requireImage()) {
         return;
       }
       const point = getCanvasPoint(event);
@@ -2164,7 +2390,7 @@ HTML = r"""<!doctype html>
       if (state.mode === 'browse') {
         const clickedDevice = findHoveredDevice(point);
         if (clickedDevice) {
-          editDevice(clickedDevice);
+          await editDevice(clickedDevice);
           return;
         }
         const clickedBuilding = findClickedBuilding(point);
@@ -2182,7 +2408,7 @@ HTML = r"""<!doctype html>
           scheduleAutosave();
           return;
         }
-        finalizeScale(point);
+        await finalizeScale(point);
         return;
       }
 
@@ -2210,7 +2436,7 @@ HTML = r"""<!doctype html>
       }
 
       if (state.mode === 'device') {
-        addDevice(point);
+        await addDevice(point);
       }
     }
 
@@ -2254,19 +2480,19 @@ HTML = r"""<!doctype html>
 
     canvas.addEventListener('click', handleCanvasClick);
 
-    imageInput.addEventListener('change', (event) => {
+    imageInput.addEventListener('change', async (event) => {
       const file = event.target.files[0];
       if (!file) {
         return;
       }
       if (!/^image\/(png|jpeg)$/.test(file.type)) {
-        alert('仅支持 JPG/PNG 图片。');
+        await showNotice('仅支持 JPG/PNG 图片。');
         imageInput.value = '';
         return;
       }
 
       const shouldReset = hasProjectContent();
-      if (shouldReset && !confirm('重新上传图片会清空当前标注，是否继续？')) {
+      if (shouldReset && !await showConfirmDialog('重新上传图片会清空当前标注，是否继续？')) {
         imageInput.value = '';
         return;
       }
@@ -2291,8 +2517,8 @@ HTML = r"""<!doctype html>
       reader.readAsDataURL(file);
     });
 
-    document.getElementById('modeScale').addEventListener('click', () => {
-      if (!requireImage()) return;
+    document.getElementById('modeScale').addEventListener('click', async () => {
+      if (!await requireImage()) return;
       setMode(state.mode === 'scale' ? 'browse' : 'scale');
     });
 
@@ -2300,54 +2526,54 @@ HTML = r"""<!doctype html>
       scalePanel.classList.toggle('hidden');
     });
 
-    document.getElementById('modeOrigin').addEventListener('click', () => {
-      if (!requireImage()) return;
+    document.getElementById('modeOrigin').addEventListener('click', async () => {
+      if (!await requireImage()) return;
       setMode(state.mode === 'origin' ? 'browse' : 'origin');
     });
 
-    document.getElementById('modeEast').addEventListener('click', () => {
-      if (!requireImage()) return;
+    document.getElementById('modeEast').addEventListener('click', async () => {
+      if (!await requireImage()) return;
       setMode(state.mode === 'east' ? 'browse' : 'east');
     });
 
-    document.getElementById('modeSouth').addEventListener('click', () => {
-      if (!requireImage()) return;
+    document.getElementById('modeSouth').addEventListener('click', async () => {
+      if (!await requireImage()) return;
       setMode(state.mode === 'south' ? 'browse' : 'south');
     });
 
-    document.getElementById('modeWest').addEventListener('click', () => {
-      if (!requireImage()) return;
+    document.getElementById('modeWest').addEventListener('click', async () => {
+      if (!await requireImage()) return;
       setMode(state.mode === 'west' ? 'browse' : 'west');
     });
 
-    document.getElementById('modeNorth').addEventListener('click', () => {
-      if (!requireImage()) return;
+    document.getElementById('modeNorth').addEventListener('click', async () => {
+      if (!await requireImage()) return;
       setMode(state.mode === 'north' ? 'browse' : 'north');
     });
 
-    document.getElementById('modeDevice').addEventListener('click', () => {
-      if (!requireImage()) return;
+    document.getElementById('modeDevice').addEventListener('click', async () => {
+      if (!await requireImage()) return;
       setMode(state.mode === 'device' ? 'browse' : 'device');
     });
 
-    document.getElementById('modeBuilding').addEventListener('click', () => {
-      if (!requireImage()) return;
+    document.getElementById('modeBuilding').addEventListener('click', async () => {
+      if (!await requireImage()) return;
       setMode(state.mode === 'building' ? 'browse' : 'building');
     });
 
-    document.getElementById('finishBuilding').addEventListener('click', () => {
-      finalizeBuilding();
+    document.getElementById('finishBuilding').addEventListener('click', async () => {
+      await finalizeBuilding();
     });
 
-    document.getElementById('editBuilding').addEventListener('click', () => {
-      editSelectedBuilding();
+    document.getElementById('editBuilding').addEventListener('click', async () => {
+      await editSelectedBuilding();
     });
 
-    document.getElementById('clearBuildings').addEventListener('click', () => {
+    document.getElementById('clearBuildings').addEventListener('click', async () => {
       if (!state.buildings.length) {
         return;
       }
-      if (!confirm('确定要清空所有建筑物吗？')) {
+      if (!await showConfirmDialog('确定要清空所有建筑物吗？')) {
         return;
       }
       saveHistory();
@@ -2366,6 +2592,7 @@ HTML = r"""<!doctype html>
     });
 
     document.getElementById('undoAction').addEventListener('click', undoLastAction);
+    document.getElementById('redoAction').addEventListener('click', redoLastAction);
     document.getElementById('clearAll').addEventListener('click', resetAll);
     document.getElementById('clearScale').addEventListener('click', clearScale);
     document.getElementById('clearOrigin').addEventListener('click', clearOrigin);
@@ -2393,12 +2620,12 @@ HTML = r"""<!doctype html>
     document.getElementById('restoreAutosave').addEventListener('click', () => {
       loadAutosaveProject({ confirmOverwrite: true }).catch((error) => {
         console.error(error);
-        alert(`恢复自动保存失败：${error.message || error}`);
+        showNotice(`恢复自动保存失败：${error.message || error}`);
       });
     });
 
     document.getElementById('clearAutosave').addEventListener('click', async () => {
-      const confirmed = confirm('确定要清除浏览器中保存的自动保存工程吗？');
+      const confirmed = await showConfirmDialog('确定要清除浏览器中保存的自动保存工程吗？');
       if (!confirmed) {
         return;
       }
@@ -2412,7 +2639,7 @@ HTML = r"""<!doctype html>
         }
       } catch (error) {
         console.error(error);
-        alert(`清除自动保存失败：${error.message || error}`);
+        await showNotice(`清除自动保存失败：${error.message || error}`);
       }
     });
 
@@ -2420,7 +2647,7 @@ HTML = r"""<!doctype html>
       const file = event.target.files[0];
       importProjectFile(file).catch((error) => {
         console.error(error);
-        alert(`导入失败：${error.message || error}`);
+        showNotice(`导入失败：${error.message || error}`);
       });
     });
 
