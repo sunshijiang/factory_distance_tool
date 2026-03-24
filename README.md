@@ -142,7 +142,9 @@ python app.py --host 127.0.0.1 --port 8765 --no-browser
 
 - 创建 `.venv-build`
 - 安装 `PyInstaller`
-- 生成 `dist\FactoryDistanceTool.exe`
+- 生成 `dist\FactoryDistanceTool_v1.0.0.exe`
+
+当前 Windows 版本号：`v1.0.0`
 
 ## 已知注意点
 

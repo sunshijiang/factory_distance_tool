@@ -48,7 +48,8 @@ pyinstaller ^
   --noconfirm ^
   --clean ^
   --onefile ^
-  --name FactoryDistanceTool ^
+  --name FactoryDistanceTool_v1.0.0 ^
+  --version-file version_info.txt ^
   app.py
 
 if errorlevel 1 (
@@ -59,6 +60,6 @@ if errorlevel 1 (
 
 echo.
 echo Build completed.
-echo EXE path: %~dp0dist\FactoryDistanceTool.exe
+echo EXE path: %~dp0dist\FactoryDistanceTool_v1.0.0.exe
 echo.
 pause

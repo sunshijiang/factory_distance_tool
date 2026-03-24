@@ -47,3 +47,9 @@
 - 为建筑物新增边线插点能力，可在右键菜单中直接插入新顶点并切换到顶点编辑
 - 为设备和建筑物新增右键菜单，常用操作如编辑、复制、删除、插点可直接触发
 - 为画布新增滚轮缩放与按住空格拖动平移，提升复杂总图下的浏览和编辑体验
+
+## 2026-03-24 - Build Windows exe with version tag
+
+- 新增 `version_info.txt`，为 Windows 可执行文件写入 `v1.0.0` 版本信息
+- 更新 `build_windows.bat` 和 `FactoryDistanceTool.spec`，使打包产物名称变为 `FactoryDistanceTool_v1.0.0.exe`
+- 同步更新 `README.md` 与 `WINDOWS_EXE_README.md` 的打包说明和产物路径
