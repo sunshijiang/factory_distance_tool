@@ -518,13 +518,17 @@ HTML = r"""<!doctype html>
           <button id="cancelPending" class="secondary">取消当前操作</button>
         </div>
         <div class="btn-grid" style="margin-top: 8px;">
+          <button id="copyDevice" class="secondary">复制设备</button>
+          <button id="deleteDevice" class="secondary">删除设备</button>
+        </div>
+        <div class="btn-grid" style="margin-top: 8px;">
           <button id="undoAction" class="secondary">撤销最近一步</button>
           <button id="redoAction" class="secondary">恢复撤销</button>
         </div>
         <div class="btn-grid" style="margin-top: 8px;">
           <button id="clearAll" class="warn">清空全部</button>
         </div>
-        <div class="muted">添加设备模式下，点击图片即可放置声源点，并弹出设备信息填写窗口。点击已有设备可再次编辑型号、声功率级等信息。鼠标悬停在设备点上可以查看厂界距离和噪声结果。</div>
+        <div class="muted">添加设备模式下，点击图片即可放置声源点，并弹出设备信息填写窗口。浏览模式下单击设备可选中，双击可编辑，还支持复制、删除和拖拽移动。</div>
       </div>
 
       <div class="section hidden" id="noiseDraftSection">
@@ -580,7 +584,11 @@ HTML = r"""<!doctype html>
           <button id="editBuilding" class="secondary">编辑建筑物</button>
           <button id="clearBuildings" class="secondary">清空建筑物</button>
         </div>
-        <div class="muted" style="margin-top: 8px;">使用多点依次描绘建筑物轮廓，完成后录入建筑物名称和插入损失。浏览模式下可从列表再次编辑。</div>
+        <div class="building-actions" style="margin-top: 8px;">
+          <button id="toggleVertexEdit" class="secondary">编辑顶点</button>
+          <button id="deleteVertex" class="secondary">删除顶点</button>
+        </div>
+        <div class="muted" style="margin-top: 8px;">使用多点依次描绘建筑物轮廓，完成后录入插入损失。浏览模式下单击建筑物可选中，双击可编辑插入损失；开启“编辑顶点”后可拖拽和删除单个顶点。</div>
         <div id="buildingList" class="building-list"></div>
       </div>
 
@@ -753,7 +761,10 @@ HTML = r"""<!doctype html>
         boundaries: state.boundaries,
         buildings: state.buildings,
         devices: state.devices,
+        selectedDeviceId: state.selectedDeviceId,
         selectedBuildingId: state.selectedBuildingId,
+        selectedVertexIndex: state.selectedVertexIndex,
+        isVertexEditMode: state.isVertexEditMode,
         pendingBuildingPoints: state.pendingBuildingPoints
       });
     }
@@ -771,7 +782,10 @@ HTML = r"""<!doctype html>
       boundaries: createEmptyBoundaries(),
       buildings: [],
       devices: [],
+      selectedDeviceId: null,
       selectedBuildingId: null,
+      selectedVertexIndex: null,
+      isVertexEditMode: false,
       hoveredDeviceId: null,
       pendingBuildingPoints: [],
       theme: 'sand',
@@ -785,6 +799,7 @@ HTML = r"""<!doctype html>
     let autosaveTimer = null;
     let suppressAutosave = false;
     let activeModal = null;
+    let dragState = null;
 
     // Data normalization keeps imported/autosaved payloads backward compatible.
     function deepClone(value) {
@@ -921,7 +936,10 @@ HTML = r"""<!doctype html>
         boundaries: normalizeBoundaries(raw && raw.boundaries),
         buildings: normalizeBuildings(raw && raw.buildings),
         devices: normalizeDevices(raw && raw.devices),
+        selectedDeviceId: raw && raw.selectedDeviceId ? raw.selectedDeviceId : null,
         selectedBuildingId: raw && raw.selectedBuildingId ? raw.selectedBuildingId : null,
+        selectedVertexIndex: Number.isInteger(raw && raw.selectedVertexIndex) ? raw.selectedVertexIndex : null,
+        isVertexEditMode: Boolean(raw && raw.isVertexEditMode),
         theme: ['sand', 'forest', 'slate'].includes(raw && raw.theme) ? raw.theme : 'sand',
         draftScaleInputs: {
           actualLength: String(draftScaleInputs.actualLength ?? (normalizedScale ? normalizedScale.actualDistance : actualLengthInput.value || '10')),
@@ -1085,8 +1103,13 @@ HTML = r"""<!doctype html>
         button.textContent = `${building.name} | IL ${formatNumber(building.insertionLoss)} dB(A)`;
         button.addEventListener('click', () => {
           state.selectedBuildingId = building.id;
+          state.selectedDeviceId = null;
+          state.selectedVertexIndex = null;
           syncUiAfterStateChange();
-          editSelectedBuilding();
+        });
+        button.addEventListener('dblclick', async () => {
+          state.selectedBuildingId = building.id;
+          await editSelectedBuilding();
         });
         buildingList.appendChild(button);
       });
@@ -1127,6 +1150,7 @@ HTML = r"""<!doctype html>
       if (state.mode === 'device') buttons.device.classList.add('active');
       if (state.mode === 'building') buttons.building.classList.add('active');
       if (BOUNDARY_META[state.mode]) buttons[state.mode].classList.add('active');
+      document.getElementById('toggleVertexEdit').classList.toggle('active', state.isVertexEditMode);
       canvas.style.cursor = state.image ? (state.mode === 'browse' ? 'default' : 'crosshair') : 'not-allowed';
       Object.entries(themeButtons).forEach(([key, button]) => {
         button.classList.toggle('active', state.theme === key);
@@ -1216,7 +1240,10 @@ HTML = r"""<!doctype html>
         boundaries: deepClone(state.boundaries),
         buildings: deepClone(state.buildings),
         devices: deepClone(state.devices),
+        selectedDeviceId: state.selectedDeviceId,
         selectedBuildingId: state.selectedBuildingId,
+        selectedVertexIndex: state.selectedVertexIndex,
+        isVertexEditMode: state.isVertexEditMode,
         theme: state.theme,
         draftScaleInputs: getDraftScaleInputs(),
         draftSourceInputs: getDraftSourceInputs()
@@ -1317,7 +1344,10 @@ HTML = r"""<!doctype html>
       state.boundaries = createEmptyBoundaries();
       state.buildings = [];
       state.devices = [];
+      state.selectedDeviceId = null;
       state.selectedBuildingId = null;
+      state.selectedVertexIndex = null;
+      state.isVertexEditMode = false;
       state.hoveredDeviceId = null;
       state.pendingBuildingPoints = [];
       state.history = [];
@@ -1331,6 +1361,9 @@ HTML = r"""<!doctype html>
       if (nextMode !== 'building') {
         state.pendingBuildingPoints = [];
       }
+      if (nextMode !== 'browse') {
+        state.selectedVertexIndex = null;
+      }
       syncUiAfterStateChange();
       if (options.autosave !== false) {
         scheduleAutosave();
@@ -1342,6 +1375,7 @@ HTML = r"""<!doctype html>
       state.pendingPoint = null;
       state.pendingBuildingPoints = [];
       state.hoveredDeviceId = null;
+      state.selectedVertexIndex = null;
       state.mode = 'browse';
       hideTooltip();
       syncUiAfterStateChange();
@@ -1357,7 +1391,10 @@ HTML = r"""<!doctype html>
       state.boundaries = normalizeBoundaries(snapshot.boundaries);
       state.buildings = normalizeBuildings(snapshot.buildings);
       state.devices = normalizeDevices(snapshot.devices);
+      state.selectedDeviceId = snapshot.selectedDeviceId || null;
       state.selectedBuildingId = snapshot.selectedBuildingId || null;
+      state.selectedVertexIndex = Number.isInteger(snapshot.selectedVertexIndex) ? snapshot.selectedVertexIndex : null;
+      state.isVertexEditMode = Boolean(snapshot.isVertexEditMode);
       state.pendingBuildingPoints = (snapshot.pendingBuildingPoints || []).map(normalizePoint).filter(Boolean);
       state.pendingPoint = null;
       state.hoveredDeviceId = null;
@@ -1549,6 +1586,19 @@ HTML = r"""<!doctype html>
         ctx.fillStyle = isSelected ? '#c45d24' : '#225b54';
         ctx.fillText(building.name || `建筑物${index + 1}`, center.x + 10, center.y);
         ctx.restore();
+
+        if (isSelected && state.isVertexEditMode) {
+          building.points.forEach((point, pointIndex) => {
+            drawCircle(point, pointIndex === state.selectedVertexIndex ? '#c45d24' : '#ffffff', pointIndex === state.selectedVertexIndex ? 7 : 5);
+            ctx.save();
+            ctx.strokeStyle = '#225b54';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, pointIndex === state.selectedVertexIndex ? 7 : 5, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.restore();
+          });
+        }
       });
 
       if (state.mode === 'building' && state.pendingBuildingPoints.length) {
@@ -1584,11 +1634,12 @@ HTML = r"""<!doctype html>
 
       state.devices.forEach((device) => {
         const hovered = device.id === state.hoveredDeviceId;
-        drawCircle({ x: device.x, y: device.y }, hovered ? '#c45d24' : '#1a1a1a', hovered ? 7 : 5);
+        const selected = device.id === state.selectedDeviceId;
+        drawCircle({ x: device.x, y: device.y }, selected ? '#0f6bd8' : (hovered ? '#c45d24' : '#1a1a1a'), selected ? 8 : (hovered ? 7 : 5));
 
         ctx.save();
-        ctx.font = `${hovered ? 'bold ' : ''}13px "Microsoft YaHei", sans-serif`;
-        ctx.fillStyle = hovered ? '#c45d24' : '#24190d';
+        ctx.font = `${hovered || selected ? 'bold ' : ''}13px "Microsoft YaHei", sans-serif`;
+        ctx.fillStyle = selected ? '#0f6bd8' : (hovered ? '#c45d24' : '#24190d');
         ctx.fillText(device.name, device.x + 10, device.y - 10);
         ctx.restore();
       });
@@ -1862,6 +1913,23 @@ HTML = r"""<!doctype html>
       return state.buildings.find((building) => isPointInPolygon(point, building.points)) || null;
     }
 
+    function findSelectedVertex(point) {
+      const building = getSelectedBuilding();
+      if (!building || !state.isVertexEditMode) {
+        return null;
+      }
+      let selected = null;
+      let minDistance = Infinity;
+      building.points.forEach((vertex, index) => {
+        const d = Math.hypot(point.x - vertex.x, point.y - vertex.y);
+        if (d <= 10 && d < minDistance) {
+          minDistance = d;
+          selected = index;
+        }
+      });
+      return selected;
+    }
+
     // User interaction workflows for annotation and project lifecycle.
     async function requireImage() {
       if (state.image) {
@@ -1964,6 +2032,43 @@ HTML = r"""<!doctype html>
       scheduleAutosave();
     }
 
+    async function deleteSelectedDevice() {
+      const device = state.devices.find((item) => item.id === state.selectedDeviceId);
+      if (!device) {
+        await showNotice('请先选择一个设备。');
+        return;
+      }
+      if (!await showConfirmDialog(`确定删除设备“${device.name}”吗？`)) {
+        return;
+      }
+      saveHistory();
+      state.devices = state.devices.filter((item) => item.id !== device.id);
+      state.selectedDeviceId = null;
+      syncUiAfterStateChange();
+      scheduleAutosave();
+    }
+
+    async function copySelectedDevice() {
+      const device = state.devices.find((item) => item.id === state.selectedDeviceId);
+      if (!device) {
+        await showNotice('请先选择一个设备。');
+        return;
+      }
+      saveHistory();
+      const copied = {
+        ...deepClone(device),
+        id: `dev-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        name: `${device.name}-副本`,
+        sourceName: `${device.sourceName || device.name}-副本`,
+        x: device.x + 24,
+        y: device.y + 24
+      };
+      state.devices.push(copied);
+      state.selectedDeviceId = copied.id;
+      syncUiAfterStateChange();
+      scheduleAutosave();
+    }
+
     async function promptBuildingData(existing = null, defaultName = '建筑物1') {
       return showFormDialog(existing ? '编辑建筑物参数' : '建筑物参数', [
         { name: 'insertionLoss', label: '建筑物插入损失 dB(A)', type: 'number', value: String(existing ? existing.insertionLoss : 21) }
@@ -1998,6 +2103,41 @@ HTML = r"""<!doctype html>
           device.buildingName = next.name;
         }
       });
+      syncUiAfterStateChange();
+      scheduleAutosave();
+    }
+
+    async function toggleVertexEditMode() {
+      const building = getSelectedBuilding();
+      if (!building) {
+        await showNotice('请先选择一个建筑物。');
+        return;
+      }
+      state.isVertexEditMode = !state.isVertexEditMode;
+      state.selectedVertexIndex = null;
+      syncUiAfterStateChange();
+    }
+
+    async function deleteSelectedVertex() {
+      const building = getSelectedBuilding();
+      if (!building) {
+        await showNotice('请先选择一个建筑物。');
+        return;
+      }
+      if (!state.isVertexEditMode || !Number.isInteger(state.selectedVertexIndex)) {
+        await showNotice('请先进入顶点编辑模式并选择一个顶点。');
+        return;
+      }
+      if (building.points.length <= 3) {
+        await showNotice('建筑物至少需要保留 3 个顶点。');
+        return;
+      }
+      if (!await showConfirmDialog('确定删除当前选中的建筑物顶点吗？')) {
+        return;
+      }
+      saveHistory();
+      building.points.splice(state.selectedVertexIndex, 1);
+      state.selectedVertexIndex = null;
       syncUiAfterStateChange();
       scheduleAutosave();
     }
@@ -2148,7 +2288,10 @@ HTML = r"""<!doctype html>
         state.boundaries = project.boundaries;
         state.buildings = project.buildings;
         state.devices = project.devices;
+        state.selectedDeviceId = project.selectedDeviceId;
         state.selectedBuildingId = project.selectedBuildingId;
+        state.selectedVertexIndex = project.selectedVertexIndex;
+        state.isVertexEditMode = project.isVertexEditMode;
         state.theme = project.theme;
         state.hoveredDeviceId = null;
         state.history = [];
@@ -2388,17 +2531,35 @@ HTML = r"""<!doctype html>
       const point = getCanvasPoint(event);
 
       if (state.mode === 'browse') {
+        if (state.isVertexEditMode) {
+          const vertexIndex = findSelectedVertex(point);
+          if (vertexIndex != null) {
+            state.selectedVertexIndex = vertexIndex;
+            state.selectedDeviceId = null;
+            syncUiAfterStateChange();
+            return;
+          }
+        }
         const clickedDevice = findHoveredDevice(point);
         if (clickedDevice) {
-          await editDevice(clickedDevice);
+          state.selectedDeviceId = clickedDevice.id;
+          state.selectedBuildingId = clickedDevice.buildingId || (getBuildingForDevice(clickedDevice) || {}).id || null;
+          state.selectedVertexIndex = null;
+          syncUiAfterStateChange();
           return;
         }
         const clickedBuilding = findClickedBuilding(point);
         if (clickedBuilding) {
           state.selectedBuildingId = clickedBuilding.id;
+          state.selectedDeviceId = null;
+          state.selectedVertexIndex = null;
           syncUiAfterStateChange();
           return;
         }
+        state.selectedDeviceId = null;
+        state.selectedVertexIndex = null;
+        syncUiAfterStateChange();
+        return;
       }
 
       if (state.mode === 'scale') {
@@ -2431,7 +2592,7 @@ HTML = r"""<!doctype html>
           scheduleAutosave();
           return;
         }
-        finalizeBoundary(point);
+        await finalizeBoundary(point);
         return;
       }
 
@@ -2439,6 +2600,50 @@ HTML = r"""<!doctype html>
         await addDevice(point);
       }
     }
+
+    async function handleCanvasDoubleClick(event) {
+      if (!await requireImage()) {
+        return;
+      }
+      const point = getCanvasPoint(event);
+      if (state.mode !== 'browse') {
+        return;
+      }
+      const clickedDevice = findHoveredDevice(point);
+      if (clickedDevice) {
+        state.selectedDeviceId = clickedDevice.id;
+        await editDevice(clickedDevice);
+        return;
+      }
+      const clickedBuilding = findClickedBuilding(point);
+      if (clickedBuilding) {
+        state.selectedBuildingId = clickedBuilding.id;
+        await editSelectedBuilding();
+      }
+    }
+
+    canvas.addEventListener('mousedown', (event) => {
+      if (!state.image || state.mode !== 'browse') {
+        return;
+      }
+      const point = getCanvasPoint(event);
+      const device = findHoveredDevice(point);
+      if (device) {
+        dragState = { type: 'device', id: device.id, offsetX: point.x - device.x, offsetY: point.y - device.y, moved: false };
+        state.selectedDeviceId = device.id;
+        state.selectedBuildingId = device.buildingId || (getBuildingForDevice(device) || {}).id || null;
+        state.selectedVertexIndex = null;
+        render();
+        return;
+      }
+      const vertexIndex = findSelectedVertex(point);
+      const building = getSelectedBuilding();
+      if (building && vertexIndex != null) {
+        dragState = { type: 'vertex', buildingId: building.id, vertexIndex, moved: false };
+        state.selectedVertexIndex = vertexIndex;
+        render();
+      }
+    });
 
     // DOM event bindings.
     canvas.addEventListener('mousemove', (event) => {
@@ -2449,6 +2654,33 @@ HTML = r"""<!doctype html>
 
       const point = getCanvasPoint(event);
       state.lastMousePoint = point;
+
+      if (dragState) {
+        if (dragState.type === 'device') {
+          const device = state.devices.find((item) => item.id === dragState.id);
+          if (device) {
+            if (!dragState.moved) {
+              saveHistory();
+            }
+            device.x = point.x - dragState.offsetX;
+            device.y = point.y - dragState.offsetY;
+            dragState.moved = true;
+            render();
+          }
+        } else if (dragState.type === 'vertex') {
+          const building = state.buildings.find((item) => item.id === dragState.buildingId);
+          if (building && building.points[dragState.vertexIndex]) {
+            if (!dragState.moved) {
+              saveHistory();
+            }
+            building.points[dragState.vertexIndex] = { x: point.x, y: point.y };
+            state.selectedVertexIndex = dragState.vertexIndex;
+            dragState.moved = true;
+            render();
+          }
+        }
+        return;
+      }
 
       const hovered = findHoveredDevice(point);
       const nextHoveredId = hovered ? hovered.id : null;
@@ -2473,12 +2705,24 @@ HTML = r"""<!doctype html>
     });
 
     canvas.addEventListener('mouseleave', () => {
+      dragState = null;
       state.hoveredDeviceId = null;
       hideTooltip();
       render();
     });
 
     canvas.addEventListener('click', handleCanvasClick);
+    canvas.addEventListener('dblclick', handleCanvasDoubleClick);
+    window.addEventListener('mouseup', () => {
+      if (!dragState) {
+        return;
+      }
+      const didMove = dragState.moved;
+      dragState = null;
+      if (didMove) {
+        scheduleAutosave();
+      }
+    });
 
     imageInput.addEventListener('change', async (event) => {
       const file = event.target.files[0];
@@ -2569,6 +2813,14 @@ HTML = r"""<!doctype html>
       await editSelectedBuilding();
     });
 
+    document.getElementById('toggleVertexEdit').addEventListener('click', async () => {
+      await toggleVertexEditMode();
+    });
+
+    document.getElementById('deleteVertex').addEventListener('click', async () => {
+      await deleteSelectedVertex();
+    });
+
     document.getElementById('clearBuildings').addEventListener('click', async () => {
       if (!state.buildings.length) {
         return;
@@ -2578,6 +2830,8 @@ HTML = r"""<!doctype html>
       }
       saveHistory();
       state.buildings = [];
+      state.isVertexEditMode = false;
+      state.selectedVertexIndex = null;
       state.selectedBuildingId = null;
       state.devices.forEach((device) => {
         device.buildingId = null;
@@ -2589,6 +2843,14 @@ HTML = r"""<!doctype html>
 
     document.getElementById('cancelPending').addEventListener('click', () => {
       cancelCurrentOperation();
+    });
+
+    document.getElementById('copyDevice').addEventListener('click', async () => {
+      await copySelectedDevice();
+    });
+
+    document.getElementById('deleteDevice').addEventListener('click', async () => {
+      await deleteSelectedDevice();
     });
 
     document.getElementById('undoAction').addEventListener('click', undoLastAction);
